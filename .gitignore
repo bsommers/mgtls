@@ -1,0 +1,4 @@
+.mgtls/
+.mgtls*/
+bin/
+*.tmp

@@ -1,0 +1,299 @@
+# Declarative Multi-Tier Fleet Manifest for mgtls
+# Usage:
+#   mgtls --store-dir .mgtls-fleet apply -f examples/fleet/mgtls.yaml
+#   mgtls --store-dir .mgtls-fleet status
+#   mgtls --store-dir .mgtls-fleet doctor --warn-days 30
+
+version: "1.0"
+
+# 1. Multi-Tier X.509 Certificate Authorities (Root CA + Intermediate CA)
+cas:
+  - name: corp-root-ca
+    common_name: "Acme Corp Root Certificate Authority"
+    organization: "Acme Corp Security"
+    country: "US"
+    algorithm: ed25519
+    valid_days: 3650
+
+  - name: corp-intermediate-ca
+    parent_ca: corp-root-ca
+    common_name: "Acme Corp Production Intermediate CA"
+    organization: "Acme Corp Platform Engineering"
+    country: "US"
+    algorithm: ecdsa-p256
+    valid_days: 1825
+
+# 2. Standalone Self-Signed Certificate (for isolated local dev appliance)
+self_signed:
+  - name: dev-local-selfsigned
+    common_name: "dev-appliance.local"
+    organization: "Acme Corp Local Dev"
+    role: mtls
+    algorithm: ecdsa-p256
+    valid_days: 365
+    dns_names:
+      - dev-appliance.local
+      - localhost
+    ip_addresses:
+      - 127.0.0.1
+      - "::1"
+
+# 3. Server, Client, and Dual mTLS Leaf Certificates across All Platforms
+certs:
+  # --- FastAPI Service (Server + Client) ---
+  - name: fastapi-server-cert
+    ca_name: corp-intermediate-ca
+    common_name: fastapi.corp.internal
+    role: server
+    algorithm: ecdsa-p256
+    valid_days: 365
+    dns_names:
+      - fastapi.corp.internal
+      - localhost
+    ip_addresses:
+      - 127.0.0.1
+      - "::1"
+
+  - name: fastapi-client-cert
+    ca_name: corp-intermediate-ca
+    common_name: fastapi-worker-client
+    role: client
+    algorithm: ecdsa-p256
+    valid_days: 365
+    dns_names:
+      - fastapi-worker.corp.internal
+    uris:
+      - spiffe://corp.internal/ns/prod/sa/fastapi-worker
+
+  # --- Spring Boot 3 Service (Server + Client) ---
+  - name: springboot-server-cert
+    ca_name: corp-intermediate-ca
+    common_name: springboot.corp.internal
+    role: server
+    algorithm: ecdsa-p256
+    valid_days: 365
+    dns_names:
+      - springboot.corp.internal
+      - localhost
+    ip_addresses:
+      - 127.0.0.1
+      - "::1"
+
+  - name: springboot-client-cert
+    ca_name: corp-intermediate-ca
+    common_name: springboot-orders-client
+    role: client
+    algorithm: ecdsa-p256
+    valid_days: 365
+    dns_names:
+      - orders-client.corp.internal
+
+  # --- Model Context Protocol (MCP) Server & Agent Client (Dual mTLS) ---
+  - name: mcp-server-cert
+    ca_name: corp-intermediate-ca
+    common_name: mcp.corp.internal
+    role: mtls
+    algorithm: ecdsa-p256
+    valid_days: 365
+    dns_names:
+      - mcp.corp.internal
+      - localhost
+    ip_addresses:
+      - 127.0.0.1
+      - "::1"
+    uris:
+      - spiffe://corp.internal/ns/ai/sa/mcp-server
+
+  - name: mcp-client-cert
+    ca_name: corp-intermediate-ca
+    common_name: claude-agent-client
+    role: client
+    algorithm: ed25519
+    valid_days: 365
+    dns_names:
+      - claude-agent.corp.internal
+    uris:
+      - spiffe://corp.internal/ns/ai/sa/claude-agent
+
+  # --- NGINX Reverse Proxy Gateway (Server + Client) ---
+  - name: nginx-server-cert
+    ca_name: corp-intermediate-ca
+    common_name: gateway.corp.internal
+    role: server
+    algorithm: ecdsa-p256
+    valid_days: 365
+    dns_names:
+      - gateway.corp.internal
+      - "*.gateway.corp.internal"
+      - localhost
+    ip_addresses:
+      - 127.0.0.1
+      - "::1"
+
+  - name: nginx-client-cert
+    ca_name: corp-intermediate-ca
+    common_name: edge-ingress-client
+    role: client
+    algorithm: ecdsa-p256
+    valid_days: 365
+    dns_names:
+      - edge-ingress.corp.internal
+
+  # --- Vite HTTPS + mTLS Dev/Preview Server (Server + Client) ---
+  - name: vite-server-cert
+    ca_name: corp-intermediate-ca
+    common_name: vite.corp.internal
+    role: server
+    algorithm: ecdsa-p256
+    valid_days: 365
+    dns_names:
+      - vite.corp.internal
+      - localhost
+    ip_addresses:
+      - 127.0.0.1
+      - "::1"
+
+  - name: vite-client-cert
+    ca_name: corp-intermediate-ca
+    common_name: frontend-developer-client
+    role: client
+    algorithm: ecdsa-p256
+    valid_days: 365
+    dns_names:
+      - dev-workstation.corp.internal
+
+  # --- Proxmox VE Cluster Node (Server + Automation Client) ---
+  - name: proxmox-node-cert
+    ca_name: corp-intermediate-ca
+    common_name: pve01.corp.internal
+    role: server
+    algorithm: ecdsa-p256
+    valid_days: 365
+    dns_names:
+      - pve01.corp.internal
+      - pve01
+      - localhost
+    ip_addresses:
+      - 10.10.0.10
+      - 127.0.0.1
+
+  - name: proxmox-client-cert
+    ca_name: corp-intermediate-ca
+    common_name: proxmox-terraform-client
+    role: client
+    algorithm: ecdsa-p256
+    valid_days: 365
+    dns_names:
+      - terraform.corp.internal
+
+# 4. OpenSSH User CA & Host CA
+ssh_cas:
+  - name: corp-ssh-user-ca
+    ca_type: user
+    algorithm: ed25519
+    comment: "corp-ssh-user-ca@corp.internal"
+
+  - name: corp-ssh-host-ca
+    ca_type: host
+    algorithm: ed25519
+    comment: "corp-ssh-host-ca@corp.internal"
+
+# 5. Signed OpenSSH User & Host Certificates
+ssh_certs:
+  - name: alice-ssh
+    ca_name: corp-ssh-user-ca
+    cert_type: user
+    key_id: "alice@corp.internal"
+    principals:
+      - alice
+      - admin
+      - sre
+      - root
+    valid_hours: 720
+    algorithm: ed25519
+
+  - name: bastion-host-ssh
+    ca_name: corp-ssh-host-ca
+    cert_type: host
+    key_id: "bastion.corp.internal"
+    principals:
+      - bastion.corp.internal
+      - "*.corp.internal"
+      - 10.0.0.10
+      - localhost
+    valid_hours: 8760
+    algorithm: ed25519
+
+# 6. Framework & Server Target Scaffolding Bundles (All 7 Supported Platforms)
+targets:
+  - name: fleet-fastapi
+    target_type: fastapi
+    host: fastapi.corp.internal
+    port: 8443
+    mutual_tls: true
+    ca_name: corp-intermediate-ca
+    server_cert: fastapi-server-cert
+    client_cert: fastapi-client-cert
+    output_dir: .mgtls-fleet/targets/fleet-fastapi
+
+  - name: fleet-springboot
+    target_type: springboot
+    host: springboot.corp.internal
+    port: 8443
+    mutual_tls: true
+    ca_name: corp-intermediate-ca
+    server_cert: springboot-server-cert
+    client_cert: springboot-client-cert
+    output_dir: .mgtls-fleet/targets/fleet-springboot
+
+  - name: fleet-mcp
+    target_type: mcp
+    host: mcp.corp.internal
+    port: 8444
+    mutual_tls: true
+    ca_name: corp-intermediate-ca
+    server_cert: mcp-server-cert
+    client_cert: mcp-client-cert
+    output_dir: .mgtls-fleet/targets/fleet-mcp
+
+  - name: fleet-nginx
+    target_type: nginx
+    host: gateway.corp.internal
+    port: 443
+    mutual_tls: true
+    ca_name: corp-intermediate-ca
+    server_cert: nginx-server-cert
+    client_cert: nginx-client-cert
+    output_dir: .mgtls-fleet/targets/fleet-nginx
+    extra:
+      upstream_url: "http://127.0.0.1:8000"
+
+  - name: fleet-vite
+    target_type: vite
+    host: vite.corp.internal
+    port: 5173
+    mutual_tls: true
+    ca_name: corp-intermediate-ca
+    server_cert: vite-server-cert
+    client_cert: vite-client-cert
+    output_dir: .mgtls-fleet/targets/fleet-vite
+
+  - name: fleet-proxmox
+    target_type: proxmox
+    host: pve01.corp.internal
+    port: 8006
+    mutual_tls: false
+    ca_name: corp-intermediate-ca
+    server_cert: proxmox-node-cert
+    client_cert: proxmox-client-cert
+    output_dir: .mgtls-fleet/targets/fleet-proxmox
+
+  - name: fleet-openssh
+    target_type: openssh
+    host: bastion.corp.internal
+    port: 22
+    mutual_tls: true
+    ca_name: corp-intermediate-ca
+    server_cert: nginx-server-cert
+    client_cert: nginx-client-cert
+    output_dir: .mgtls-fleet/targets/fleet-openssh

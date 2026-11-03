@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "mgtls-local-stdio": {
+      "command": "mgtls",
+      "args": [
+        "--store-dir",
+        "/home/bill/src/sysadmin/mgtls/examples/mcp-mtls/.mgtls-mcp",
+        "mcp",
+        "serve",
+        "--transport",
+        "stdio"
+      ],
+      "env": {}
+    },
+    "mgtls-remote-mtls": {
+      "url": "https://localhost:8444/mcp",
+      "transport": {
+        "type": "http",
+        "tls": {
+          "caFile": "/home/bill/src/sysadmin/mgtls/examples/mcp-mtls/.mgtls-mcp/certs/mcp-srv/ca-chain.pem",
+          "certFile": "/home/bill/src/sysadmin/mgtls/examples/mcp-mtls/.mgtls-mcp/certs/mcp-client/cert.pem",
+          "keyFile": "/home/bill/src/sysadmin/mgtls/examples/mcp-mtls/.mgtls-mcp/certs/mcp-client/key.pem",
+          "rejectUnauthorized": true
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "project": "mgtls",
+  "mode": "autonomous",
+  "parallelism": "max",
+  "language": "go",
+  "go_version": "1.26.0",
+  "interfaces": ["cli", "mcp"],
+  "verification": {
+    "unit_tests": "go test -v -race ./...",
+    "build": "CGO_ENABLED=0 go build -o bin/mgtls ./cmd/mgtls"
+  }
+}

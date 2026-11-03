@@ -1,0 +1,29 @@
+server:
+  port: 8443
+  ssl:
+    bundle: mtls-server
+    client-auth: need
+    enabled-protocols:
+      - TLSv1.3
+      - TLSv1.2
+
+spring:
+  application:
+    name: mgtls-springboot-service
+  ssl:
+    bundle:
+      pem:
+        mtls-server:
+          reload-on-update: true
+          keystore:
+            certificate: "${MGTLS_STORE_DIR:.mgtls-springboot}/certs/springboot-srv/fullchain.pem"
+            private-key: "${MGTLS_STORE_DIR:.mgtls-springboot}/certs/springboot-srv/key.pem"
+          truststore:
+            certificate: "${MGTLS_STORE_DIR:.mgtls-springboot}/certs/springboot-srv/ca-chain.pem"
+        mtls-client:
+          reload-on-update: true
+          keystore:
+            certificate: "${MGTLS_STORE_DIR:.mgtls-springboot}/certs/springboot-client/fullchain.pem"
+            private-key: "${MGTLS_STORE_DIR:.mgtls-springboot}/certs/springboot-client/key.pem"
+          truststore:
+            certificate: "${MGTLS_STORE_DIR:.mgtls-springboot}/certs/springboot-client/ca-chain.pem"
