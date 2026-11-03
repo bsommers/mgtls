@@ -223,6 +223,7 @@ mgtls ssh config-bundle --name corp-ssh-fleet \
 | :--- | :--- | :--- |
 | **GitHub Pages Site** | [`https://bsommers.github.io/mgtls/`](https://bsommers.github.io/mgtls/) | Interactive dark-mode documentation portal, quickstart tabs, target showcase, and MCP tool catalog |
 | **System Architecture** | [`docs/architecture/SYSTEM_ARCHITECTURE.md`](docs/architecture/SYSTEM_ARCHITECTURE.md) | Layered architecture, component interaction diagrams, security model, and workspace layout |
+| **Ecosystem Comparison & Heatmap** | [`docs/architecture/ECOSYSTEM_COMPARISON.md`](docs/architecture/ECOSYSTEM_COMPARISON.md) | Open-source comparison matrix & ASCII capability heatmap (`mgtls` vs `step-ca`, `Vault`, `cfssl`, `mkcert`, `certbot`) |
 | **Cryptography & Protocol Spec** | [`docs/specs/CRYPTO_AND_PROTOCOL_SPEC.md`](docs/specs/CRYPTO_AND_PROTOCOL_SPEC.md) | X.509 v3 profile specifications, key usage matrices, OpenSSH cert format, and RFC 8555 ACME v2 state machine |
 | **MCP Server Specification** | [`docs/specs/MCP_SERVER_SPEC.md`](docs/specs/MCP_SERVER_SPEC.md) | JSON-RPC 2.0 MCP tools, resources, prompts, schemas, and `stdio`/HTTPS-mTLS transport specifications |
 | **User Guide & CLI Reference** | [`docs/user-guide/USER_GUIDE.md`](docs/user-guide/USER_GUIDE.md) | Complete CLI command reference, PKI lifecycle tutorials, and declarative `mgtls.yaml` guide |
