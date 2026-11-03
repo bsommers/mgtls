@@ -50,6 +50,47 @@ Setting up **Mutual TLS (mTLS)**, **multi-tier Certificate Authorities (Root + I
 | Separate ACME client tools for Let's Encrypt, ZeroSSL, Buypass, or Google Trust Services | Built-in RFC 8555 ACME v2 client supporting HTTP-01, TLS-ALPN-01, DNS-01, and External Account Binding (EAB) |
 | Ad-hoc shell scripts executed by AI agents or CI runners | Native **MCP JSON-RPC 2.0 Server** (`mgtls mcp serve` over `stdio` or mTLS HTTPS) + declarative `mgtls apply -f mgtls.yaml` |
 
+### Open-Source Ecosystem Capability Heatmap
+
+See [`docs/architecture/ECOSYSTEM_COMPARISON.md`](docs/architecture/ECOSYSTEM_COMPARISON.md) for the full analysis:
+
+```text
+Legend:  ████ 100% (Full Native)   ▓▓░░ 50% (Partial / Plugin / Server-Only)   ░░░░ 0% (Not Supported)
+
+╔════════════════════════════════╦════════════╦════════════╦════════════╦════════════╦════════════╦════════════╗
+║                                ║   X.509    ║  OpenSSH   ║   Public   ║ App/Server ║Declarative ║   Native   ║
+║  OPEN-SOURCE TOOL              ║ Multi-Tier ║ User/Host  ║  ACME v2   ║   mTLS     ║YAML Fleet  ║ MCP Server ║
+║                                ║ PKI & mTLS ║     CA     ║  Client    ║Scaffolding ║  (GitOps)  ║ (AI Agent) ║
+╠════════════════════════════════╬════════════╬════════════╬════════════╬════════════╬════════════╬════════════╣
+║  mgtls (Go 1.26, 0-CGO)        ║ ████  100% ║ ████  100% ║ ████  100% ║ ████  100% ║ ████  100% ║ ████  100% ║
+╟────────────────────────────────╫────────────╫────────────╫────────────╫────────────╫────────────╫────────────╢
+║  Smallstep (step-cli / step-ca)║ ████  100% ║ ████  100% ║ ████  100% ║ ░░░░    0% ║ ░░░░    0% ║ ░░░░    0% ║
+╟────────────────────────────────╫────────────╫────────────╫────────────╫────────────╫────────────╫────────────╢
+║  HashiCorp Vault / OpenBao     ║ ████  100% ║ ████  100% ║ ▓▓░░   50% ║ ░░░░    0% ║ ▓▓░░   50% ║ ▓▓░░   50% ║
+╟────────────────────────────────╫────────────╫────────────╫────────────╫────────────╫────────────╫────────────╢
+║  Cloudflare cfssl              ║ ████  100% ║ ░░░░    0% ║ ░░░░    0% ║ ░░░░    0% ║ ▓▓░░   50% ║ ░░░░    0% ║
+╟────────────────────────────────╫────────────╫────────────╫────────────╫────────────╫────────────╫────────────╢
+║  Square certstrap              ║ ████  100% ║ ░░░░    0% ║ ░░░░    0% ║ ░░░░    0% ║ ░░░░    0% ║ ░░░░    0% ║
+╟────────────────────────────────╫────────────╫────────────╫────────────╫────────────╫────────────╫────────────╢
+║  OpenVPN easy-rsa              ║ ████  100% ║ ░░░░    0% ║ ░░░░    0% ║ ░░░░    0% ║ ░░░░    0% ║ ░░░░    0% ║
+╟────────────────────────────────╫────────────╫────────────╫────────────╫────────────╫────────────╫────────────╢
+║  FiloSottile mkcert            ║ ▓▓░░   50% ║ ░░░░    0% ║ ░░░░    0% ║ ░░░░    0% ║ ░░░░    0% ║ ░░░░    0% ║
+╟────────────────────────────────╫────────────╫────────────╫────────────╫────────────╫────────────╫────────────╢
+║  lego / certbot / acme.sh      ║ ░░░░    0% ║ ░░░░    0% ║ ████  100% ║ ▓▓░░   50% ║ ░░░░    0% ║ ░░░░    0% ║
+╚════════════════════════════════╩════════════╩════════════╩════════════╩════════════╩════════════╩════════════╝
+
+  Overall Ecosystem Coverage Score (out of 6 Core Dimensions):
+  ──────────────────────────────────────────────────────────────────────────────
+  mgtls                     ████████████████████████████████████  6.0 / 6.0 (100%)
+  HashiCorp Vault / OpenBao █████████████████████░░░░░░░░░░░░░░░  3.5 / 6.0  (58%)
+  Smallstep (step-cli/ca)   ██████████████████░░░░░░░░░░░░░░░░░░  3.0 / 6.0  (50%)
+  Cloudflare cfssl          █████████░░░░░░░░░░░░░░░░░░░░░░░░░░░  1.5 / 6.0  (25%)
+  lego / certbot / acme.sh  █████████░░░░░░░░░░░░░░░░░░░░░░░░░░░  1.5 / 6.0  (25%)
+  Square certstrap          ██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1.0 / 6.0  (17%)
+  OpenVPN easy-rsa          ██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1.0 / 6.0  (17%)
+  FiloSottile mkcert        ███░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0.5 / 6.0   (8%)
+```
+
 ### Who Should Use `mgtls` & Common Use Cases
 1. **API & Microservice Developers (FastAPI, Spring Boot, Vite, NGINX)**: Stand up local or production mutual TLS (mTLS) between backend APIs, reverse proxies, and frontend dev servers in seconds, complete with working client certificate validation code.
 2. **AI Agent & MCP Server Builders**: Secure local or remote **Model Context Protocol (MCP)** servers with strict client-certificate mTLS, and give AI agents direct access to `mgtls` via `mgtls mcp serve` to provision certificates autonomously.
