@@ -1,5 +1,16 @@
 # User Guide & CLI Reference — `mgtls`
 
+## Purpose & What Problem `mgtls` Solves
+
+`mgtls` is designed to eliminate the friction of creating and deploying **TLS, Mutual TLS (mTLS), multi-tier Certificate Authorities (Root + Intermediate CA chains), OpenSSH User & Host CAs, and free public ACME certificates** across real-world services and developer tools.
+
+Instead of stitching together fragile `openssl`, `ssh-keygen`, `keytool`, and `certbot` commands—and then manually figuring out how to configure client-certificate verification in **Python FastAPI**, **Spring Boot 3**, **Model Context Protocol (MCP) servers**, **NGINX**, **Vite**, **Proxmox VE**, or **OpenSSH**—`mgtls` provides:
+1. **One Unified Cryptographic Engine**: Create local Root CAs, Intermediate CA chains, self-signed certificates, Server/Client mTLS leaf certificates, X.509 CRLs, OpenSSH User/Host CAs & signed certificates, and Let's Encrypt / ZeroSSL / Buypass / Google Trust ACME certificates from a single static binary.
+2. **One-Command Target Scaffolding (`mgtls target generate`)**: Automatically generate both the cryptographic certificates and the exact, ready-to-run server configs, client code snippets, and verification scripts for your target stack (`fastapi`, `springboot`, `mcp`, `nginx`, `vite`, `proxmox`, `openssh`).
+3. **Human CLI + Declarative IaC (`mgtls.yaml`) + AI Agent MCP Server (`mgtls mcp serve`)**: Run commands interactively in your terminal, reconcile entire fleets declaratively in CI/CD, or let AI agents call `mgtls` natively over the Model Context Protocol.
+
+---
+
 ## 1. Installation & Quickstart
 
 ### Build from Source (`Go 1.26+`)
@@ -7,7 +18,7 @@
 `mgtls` compiles as a single static binary with zero CGO dependencies:
 
 ```bash
-CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o mgtls ./src/src/cmd/mgtls
+CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o mgtls ./src/cmd/mgtls
 sudo install -m 0755 mgtls /usr/local/bin/mgtls
 ```
 

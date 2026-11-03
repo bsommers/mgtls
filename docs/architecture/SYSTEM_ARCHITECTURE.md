@@ -1,8 +1,17 @@
 # System Architecture — `mgtls`
 
-## 1. Overview & Design Philosophy
+## 1. Purpose, Problem Statement & Design Philosophy
 
-`mgtls` is a zero-CGO (`CGO_ENABLED=0`), static Go (`go1.26`) cryptographic orchestration engine, CLI binary, and Model Context Protocol (MCP) JSON-RPC 2.0 server. It provides deterministic lifecycle management for:
+### Why `mgtls` Exists
+Modern infrastructure requires zero-trust transport security everywhere—mutual TLS (mTLS) between microservices and AI Model Context Protocol (MCP) servers, trusted TLS certificates on hypervisors like Proxmox VE and local dev servers like Vite, and certificate-based OpenSSH authentication instead of static SSH keys. Yet provisioning these setups traditionally requires glueing together incompatible CLI tools (`openssl`, `ssh-keygen`, `certbot`, `keytool`) and manually translating certificate chains into framework-specific configurations.
+
+**The core purpose of `mgtls`** is to unify the entire cryptographic lifecycle—from CA creation and ACME public issuance to framework-specific mTLS configuration scaffolding—into a single, deterministic, zero-CGO (`CGO_ENABLED=0`) Go 1.26 binary that serves three audiences simultaneously:
+- **Developers & Sysadmins** via an ergonomic CLI (`mgtls ca`, `mgtls cert`, `mgtls ssh`, `mgtls acme`, `mgtls target`).
+- **Platform & IaC/CI-CD Engineers** via declarative YAML/JSON state reconciliation (`mgtls apply -f mgtls.yaml` & `mgtls doctor`).
+- **Autonomous AI Agents & Toolchains** via a built-in Model Context Protocol (MCP) JSON-RPC 2.0 server (`mgtls mcp serve` over `stdio` and mTLS-authenticated HTTPS).
+
+### Core Subsystem Responsibilities
+`mgtls` provides deterministic lifecycle management across six domains:
 
 1. **X.509 Public Key Infrastructure (`pkg/pki`)**: Root CAs, multi-tier Intermediate CAs, standalone self-signed certificates, Server/Client/Dual mutual TLS (mTLS) leaf certificates, Certificate Revocation Lists (CRLs), PKCS#12/DER exports, and OS trust store provisioning scripts.
 2. **OpenSSH Certificate Authorities (`pkg/sshca`)**: Dedicated SSH User CAs and SSH Host CAs, OpenSSH v01 certificate signing (`*-cert.pub`), certificate inspection, and automated `sshd_config`/`ssh_config`/`authorized_principals`/`known_hosts` configuration bundles.
@@ -93,7 +102,7 @@ flowchart TD
 | `pkg/targets` | Framework scaffolding (`fastapi`, `springboot`, `mcp`, `nginx`, `vite`, `proxmox`, `openssh`), automated certificate provisioning, and runnable verification scripts. | `pkg/store`, `pkg/pki`, `pkg/sshca` | `text/template`, `path/filepath` |
 | `pkg/profile` | Declarative `mgtls.yaml` / JSON parser, idempotent convergence engine (`Apply`), and store health/expiry diagnostics (`RunDoctor`). | `pkg/store`, `pkg/pki`, `pkg/sshca`, `pkg/acme`, `pkg/targets` | `gopkg.in/yaml.v3`, `encoding/json` |
 | `pkg/mcpserver` | Model Context Protocol (MCP) JSON-RPC 2.0 server (`stdio` and `http`/`https`/mTLS), exposing Tools, Resources, and Prompts. | `pkg/store`, `pkg/pki`, `pkg/sshca`, `pkg/acme`, `pkg/targets`, `pkg/profile` | `encoding/json`, `net/http`, `crypto/tls` |
-| `src/src/cmd/mgtls` | CLI entrypoint, subcommand routing, flag parsing, tabular human output, and `--json` structured output. | All `pkg/*` | `flag`, `fmt`, `os` |
+| `src/cmd/mgtls` | CLI entrypoint, subcommand routing, flag parsing, tabular human output, and `--json` structured output. | All `pkg/*` | `flag`, `fmt`, `os` |
 
 ---
 

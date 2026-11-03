@@ -31,9 +31,36 @@
 
 # `mgtls` — Unified TLS, mTLS, Local/Public CA, OpenSSH Certificate & Target Provisioning Engine
 
+## Purpose & Why `mgtls` Exists
+
+### The Problem
+Setting up **Mutual TLS (mTLS)**, **multi-tier Certificate Authorities (Root + Intermediate CAs)**, **OpenSSH Certificate Authorities**, and **free public ACME certificates** across modern polyglot stacks is notoriously tedious and error-prone:
+- **Cryptographic Tool Sprawl**: Engineers have to juggle raw `openssl` commands, custom `.cnf` files for Subject Alternative Names (SANs) and Extended Key Usages (`serverAuth`/`clientAuth`), `keytool`/`pkcs12` conversions for Java, `ssh-keygen -s` flags for OpenSSH CAs, and `certbot`/`acme.sh` scripts for public certificates.
+- **Framework Configuration Friction**: Even after generating `.pem` files, wiring strict mTLS verification into **Python FastAPI / Uvicorn**, **Spring Boot 3 REST APIs**, **Model Context Protocol (MCP) Servers**, **NGINX**, **Vite dev servers**, **Proxmox VE nodes**, and **OpenSSH daemons** requires memorizing different configuration schemas, SSL bundle formats, and client verification flags for every single tool.
+- **AI Agent & Automation Blind Spot**: AI coding agents (Claude Code, Cursor, Antigravity) and IaC/CI-CD pipelines cannot safely or deterministically orchestrate ad-hoc `openssl` shell pipelines without risking broken certificate chains, missing SANs, or insecure private key permissions.
+
+### The Purpose of `mgtls`
+`mgtls` exists to turn **complex cryptographic infrastructure and mTLS service onboarding into a single, deterministic command**—callable by **humans via CLI**, by **IaC/CI-CD pipelines via declarative `mgtls.yaml` manifests**, and by **AI agents via a built-in Model Context Protocol (`mgtls mcp serve`) server**:
+
+| Without `mgtls` (Manual Legacy Workflow) | With `mgtls` (Unified Zero-Trust Engine) |
+| :--- | :--- |
+| 15+ `openssl genrsa`, `req`, `x509 -extfile` commands to build a Root → Intermediate → Server/Client mTLS chain | `mgtls ca create` & `mgtls cert issue` (or 1-command `mgtls target generate <framework> --mtls`) |
+| Hand-crafting framework-specific SSL configs for FastAPI, Spring Boot, MCP, NGINX, Vite, and Proxmox | Drop-in, runnable server + client configs, code snippets, and verification scripts generated automatically |
+| Managing brittle `~/.ssh/authorized_keys` and TOFU `known_hosts` across server fleets | Built-in OpenSSH User & Host CA (`mgtls ssh ca-create`, `sign-user`, `sign-host`, `config`) |
+| Separate ACME client tools for Let's Encrypt, ZeroSSL, Buypass, or Google Trust Services | Built-in RFC 8555 ACME v2 client supporting HTTP-01, TLS-ALPN-01, DNS-01, and External Account Binding (EAB) |
+| Ad-hoc shell scripts executed by AI agents or CI runners | Native **MCP JSON-RPC 2.0 Server** (`mgtls mcp serve` over `stdio` or mTLS HTTPS) + declarative `mgtls apply -f mgtls.yaml` |
+
+### Who Should Use `mgtls` & Common Use Cases
+1. **API & Microservice Developers (FastAPI, Spring Boot, Vite, NGINX)**: Stand up local or production mutual TLS (mTLS) between backend APIs, reverse proxies, and frontend dev servers in seconds, complete with working client certificate validation code.
+2. **AI Agent & MCP Server Builders**: Secure local or remote **Model Context Protocol (MCP)** servers with strict client-certificate mTLS, and give AI agents direct access to `mgtls` via `mgtls mcp serve` to provision certificates autonomously.
+3. **Homelab & Infrastructure Admins (Proxmox VE, OpenSSH Fleets)**: Replace Proxmox VE self-signed browser warnings with trusted CA chains or automated ACME certificates, and replace static SSH keys with short-lived OpenSSH User & Host certificates.
+4. **DevSecOps, IaC & CI/CD Pipelines (Terraform, Ansible, GitHub Actions, GitLab CI)**: Version-control your entire PKI, SSH CA, and target topology in `mgtls.yaml`, reconcile it idempotently with `mgtls apply`, and audit key permissions (`0600`) and certificate expiry with `mgtls doctor`.
+
+---
+
 ## About
 
-`mgtls` is a zero-CGO (`CGO_ENABLED=0`), single-binary Go 1.26 cryptographic authority, certificate lifecycle engine, and **Model Context Protocol (MCP)** server (`mgtls mcp serve`) built for developers, platform engineers, and autonomous AI agents. It eliminates fragmented `openssl`, `ssh-keygen`, and ACME shell scripts by unifying local multi-tier X.509 PKI, mutual TLS (mTLS), OpenSSH User & Host Certificate Authorities, free public RFC 8555 ACME v2 encryption, and drop-in configuration generation across 7 target platforms (`FastAPI`, `Spring Boot 3`, `MCP Server`, `NGINX`, `Vite`, `Proxmox VE`, and `OpenSSH`):
+`mgtls` is a zero-CGO (`CGO_ENABLED=0`), single-binary Go 1.26 cryptographic authority, certificate lifecycle engine, and **Model Context Protocol (MCP)** server (`mgtls mcp serve`) built for developers, platform engineers, and autonomous AI agents. It unifies local multi-tier X.509 PKI, mutual TLS (mTLS), OpenSSH User & Host Certificate Authorities, free public RFC 8555 ACME v2 encryption, and drop-in configuration generation across 7 target platforms (`FastAPI`, `Spring Boot 3`, `MCP Server`, `NGINX`, `Vite`, `Proxmox VE`, and `OpenSSH`):
 
 - **Multi-Tier X.509 PKI & Mutual TLS (mTLS)**: Root CAs, Intermediate CA chains (`fullchain.pem`, `ca-chain.pem`), standalone self-signed certificates, Server/Client/Dual-mTLS leaf certificates, PKCS#12 (`.p12`) & DER bundles, X.509 v2 CRLs, and OS trust store installers.
 - **OpenSSH Certificate Authorities**: Dedicated OpenSSH User CAs (`SSH_CERT_TYPE_USER`) and Host CAs (`SSH_CERT_TYPE_HOST`), Ed25519/ECDSA/RSA keypair generation, principal/validity/extension signing (`*-cert.pub`), certificate inspection, and automated `sshd_config`, `ssh_config`, `authorized_principals`, and `@cert-authority` `known_hosts` bundles.
