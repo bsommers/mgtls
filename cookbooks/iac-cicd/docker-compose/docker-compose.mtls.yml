@@ -1,0 +1,45 @@
+version: "3.9"
+
+# Docker Compose Zero-Trust mTLS Stack Powered by mgtls
+# Usage:
+#   mgtls apply -f examples/fleet/mgtls.yaml
+#   docker compose -f cookbooks/iac-cicd/docker-compose/docker-compose.mtls.yml up -d
+
+services:
+  nginx-mtls-gateway:
+    image: nginx:1.27-alpine
+    container_name: mgtls-nginx-gateway
+    ports:
+      - "8443:443"
+    volumes:
+      - ../../../.mgtls/targets/nginx-edge/nginx-mtls.conf:/etc/nginx/conf.d/default.conf:ro
+      - ../../../.mgtls/certs/nginx-srv/fullchain.pem:/etc/nginx/tls/fullchain.pem:ro
+      - ../../../.mgtls/certs/nginx-srv/key.pem:/etc/nginx/tls/key.pem:ro
+      - ../../../.mgtls/certs/nginx-srv/ca-chain.pem:/etc/nginx/tls/ca-chain.pem:ro
+    restart: unless-stopped
+
+  mcp-mtls-server:
+    image: golang:1.26-alpine
+    container_name: mgtls-mcp-server
+    working_dir: /workspace
+    command:
+      - /workspace/bin/mgtls
+      - --store-dir
+      - /workspace/.mgtls
+      - mcp
+      - serve
+      - --transport
+      - http
+      - --addr
+      - 0.0.0.0:8444
+      - --tls-cert
+      - /workspace/.mgtls/certs/mcp-srv/fullchain.pem
+      - --tls-key
+      - /workspace/.mgtls/certs/mcp-srv/key.pem
+      - --client-ca
+      - /workspace/.mgtls/certs/mcp-srv/ca-chain.pem
+    ports:
+      - "8444:8444"
+    volumes:
+      - ../../../:/workspace:ro
+    restart: unless-stopped

@@ -1,0 +1,1207 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>mgtls — Unified TLS, mTLS, Local/Public CA, OpenSSH CA &amp; Target Provisioning Engine</title>
+  <meta name="description" content="Zero-CGO Go 1.26 CLI &amp; MCP JSON-RPC 2.0 Server for multi-tier X.509 PKI, Mutual TLS (mTLS), OpenSSH User &amp; Host Certificate Authorities, Free Public ACME v2, and 7 target platform scaffolds." />
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+  <link rel="alternate icon" type="image/png" href="assets/favicon-64.png" />
+  <style>
+    :root {
+      --bg-primary: #060911;
+      --bg-secondary: #0b1120;
+      --bg-card: #0f172a;
+      --bg-code: #070b14;
+      --border: #1e293b;
+      --border-glow: rgba(16, 185, 129, 0.45);
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --emerald: #10b981;
+      --emerald-light: #34d399;
+      --cyan: #06b6d4;
+      --cyan-light: #38bdf8;
+      --purple: #a855f7;
+      --amber: #f59e0b;
+      --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      line-height: 1.6;
+    }
+
+    body {
+      background-image:
+        radial-gradient(circle at 15% 10%, rgba(16, 185, 129, 0.08) 0%, transparent 35%),
+        radial-gradient(circle at 85% 15%, rgba(6, 182, 212, 0.08) 0%, transparent 35%),
+        linear-gradient(to bottom, #060911 0%, #090f1d 100%);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    a {
+      color: var(--cyan-light);
+      text-decoration: none;
+      transition: color 0.15s ease;
+    }
+
+    a:hover {
+      color: var(--emerald-light);
+    }
+
+    /* Sticky Navbar */
+    .navbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(14px);
+      background: rgba(6, 9, 17, 0.85);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav-container {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 0.85rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-weight: 800;
+      font-size: 1.25rem;
+      color: var(--text-primary);
+      letter-spacing: -0.02em;
+    }
+
+    .brand img {
+      width: 34px;
+      height: 34px;
+    }
+
+    .brand-badge {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+      background: rgba(16, 185, 129, 0.14);
+      color: var(--emerald-light);
+      border: 1px solid rgba(16, 185, 129, 0.35);
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 1.35rem;
+      flex-wrap: wrap;
+      font-size: 0.92rem;
+      font-weight: 500;
+    }
+
+    .nav-links a {
+      color: var(--text-secondary);
+    }
+
+    .nav-links a:hover {
+      color: var(--text-primary);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.55rem 1.1rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      transition: all 0.18s ease;
+      cursor: pointer;
+      border: 1px solid transparent;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--emerald) 0%, var(--cyan) 100%);
+      color: #04110b;
+      font-weight: 700;
+      box-shadow: 0 0 22px rgba(16, 185, 129, 0.28);
+    }
+
+    .btn-primary:hover {
+      color: #020806;
+      transform: translateY(-1px);
+      box-shadow: 0 0 30px rgba(6, 182, 212, 0.45);
+    }
+
+    .btn-outline {
+      background: rgba(15, 23, 42, 0.8);
+      color: var(--text-primary);
+      border-color: var(--border);
+    }
+
+    .btn-outline:hover {
+      border-color: var(--cyan);
+      color: var(--cyan-light);
+    }
+
+    .container {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+    }
+
+    /* Hero Section */
+    .hero {
+      padding: 3.5rem 0 2.5rem;
+      text-align: center;
+    }
+
+    .hero-logo-banner {
+      max-width: 860px;
+      width: 100%;
+      height: auto;
+      margin: 0 auto 1.5rem;
+      display: block;
+      filter: drop-shadow(0 14px 35px rgba(6, 182, 212, 0.15));
+    }
+
+    .hero-ascii {
+      max-width: 780px;
+      margin: 0 auto 1.75rem;
+      background: var(--bg-code);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      line-height: 1.25;
+      color: var(--emerald-light);
+      text-align: left;
+      box-shadow: inset 0 0 24px rgba(16, 185, 129, 0.05);
+    }
+
+    .hero-lead {
+      max-width: 860px;
+      margin: 0 auto 1.75rem;
+      font-size: 1.15rem;
+      color: var(--text-secondary);
+    }
+
+    .hero-lead strong {
+      color: var(--text-primary);
+    }
+
+    .hero-actions {
+      display: flex;
+      justify-content: center;
+      gap: 0.9rem;
+      flex-wrap: wrap;
+      margin-bottom: 2.5rem;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+      gap: 1rem;
+      max-width: 1040px;
+      margin: 0 auto;
+    }
+
+    .stat-card {
+      background: rgba(15, 23, 42, 0.72);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.1rem;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-family: var(--font-mono);
+      font-size: 1.65rem;
+      font-weight: 800;
+      background: linear-gradient(90deg, var(--emerald-light), var(--cyan-light));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .stat-label {
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+      margin-top: 0.2rem;
+    }
+
+    /* Section Headers */
+    section {
+      padding: 3.5rem 0;
+      border-top: 1px solid rgba(30, 41, 59, 0.65);
+    }
+
+    .section-header {
+      margin-bottom: 2rem;
+    }
+
+    .section-eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--emerald-light);
+      margin-bottom: 0.4rem;
+    }
+
+    .section-title {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: var(--text-primary);
+    }
+
+    .section-desc {
+      color: var(--text-secondary);
+      max-width: 760px;
+      margin-top: 0.4rem;
+    }
+
+    /* Tabs */
+    .tabs-wrapper {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+    }
+
+    .tab-header {
+      display: flex;
+      background: var(--bg-code);
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+    }
+
+    .tab-btn {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+      font-size: 0.86rem;
+      font-weight: 600;
+      padding: 0.95rem 1.35rem;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      white-space: nowrap;
+      transition: all 0.15s ease;
+    }
+
+    .tab-btn:hover {
+      color: var(--text-primary);
+      background: rgba(30, 41, 59, 0.35);
+    }
+
+    .tab-btn.active {
+      color: var(--emerald-light);
+      border-bottom-color: var(--emerald);
+      background: rgba(16, 185, 129, 0.07);
+    }
+
+    .tab-panel {
+      display: none;
+      padding: 1.5rem;
+      position: relative;
+    }
+
+    .tab-panel.active {
+      display: block;
+    }
+
+    pre.code-block {
+      background: var(--bg-code);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.2rem;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      line-height: 1.55;
+      color: #e2e8f0;
+    }
+
+    .copy-btn {
+      position: absolute;
+      top: 2.2rem;
+      right: 2.2rem;
+      background: rgba(30, 41, 59, 0.85);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.35rem 0.7rem;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      cursor: pointer;
+    }
+
+    .copy-btn:hover {
+      border-color: var(--emerald);
+      color: var(--emerald-light);
+    }
+
+    /* Architecture & PKI Chain Visual Grid */
+    .arch-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .arch-layer {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.4rem;
+      position: relative;
+    }
+
+    .arch-layer h3 {
+      font-size: 1.08rem;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: var(--emerald-light);
+    }
+
+    .arch-layer p {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      margin-bottom: 0.9rem;
+    }
+
+    .arch-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+    }
+
+    .pill {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      padding: 0.2rem 0.55rem;
+      border-radius: 6px;
+      background: var(--bg-code);
+      border: 1px solid var(--border);
+      color: var(--cyan-light);
+    }
+
+    /* Target Framework Cards */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.45rem;
+      transition: transform 0.16s ease, border-color 0.16s ease;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      border-color: var(--border-glow);
+    }
+
+    .card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.75rem;
+    }
+
+    .card-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .port-tag {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      padding: 0.15rem 0.55rem;
+      border-radius: 6px;
+      background: rgba(6, 182, 212, 0.12);
+      color: var(--cyan-light);
+      border: 1px solid rgba(6, 182, 212, 0.3);
+    }
+
+    .card-body {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      margin-bottom: 1rem;
+    }
+
+    .artifact-list {
+      list-style: none;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: #cbd5e1;
+      background: var(--bg-code);
+      padding: 0.75rem 0.9rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+
+    .artifact-list li {
+      padding: 0.18rem 0;
+    }
+
+    .artifact-list li::before {
+      content: "▸ ";
+      color: var(--emerald);
+    }
+
+    /* Data Tables */
+    .table-wrap {
+      overflow-x: auto;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.9rem;
+    }
+
+    th, td {
+      padding: 0.9rem 1.15rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      background: var(--bg-code);
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-secondary);
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr:hover td {
+      background: rgba(30, 41, 59, 0.3);
+    }
+
+    code.inline {
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      padding: 0.15rem 0.45rem;
+      border-radius: 5px;
+      background: var(--bg-code);
+      color: var(--emerald-light);
+      border: 1px solid var(--border);
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2.5rem 0;
+      margin-top: 2rem;
+      color: var(--text-muted);
+      font-size: 0.88rem;
+    }
+
+    .footer-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navigation -->
+  <header class="navbar">
+    <div class="nav-container">
+      <a href="#" class="brand">
+        <img src="assets/favicon.svg" alt="mgtls icon" />
+        <span>mgtls</span>
+        <span class="brand-badge">v1.0.0</span>
+      </a>
+      <nav class="nav-links">
+        <a href="#quickstart">Quickstart</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#targets">7 Targets</a>
+        <a href="#acme">Free ACME</a>
+        <a href="#cookbooks">Cookbooks &amp; IaC</a>
+        <a href="#mcp">18 MCP Tools</a>
+        <a href="#docs">Docs</a>
+        <a href="https://github.com/bsommers/mgtls" class="btn btn-outline">GitHub</a>
+        <a href="https://github.com/bsommers/mgtls/releases/tag/v1.0.0" class="btn btn-primary">Download v1.0.0</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <main class="container">
+    <section class="hero" style="border-top: none;">
+      <img src="assets/logo.svg" alt="mgtls Banner Logo" class="hero-logo-banner" />
+
+      <pre class="hero-ascii" aria-label="mgtls ASCII Art">   ╭──────────────────────────────────────────────────────────────────────────╮
+   │               ▄▄▄▄███▄▄▄▄      ▄██████▄      ███      ▄█       ▄████████ │
+   │             ▄██▀▀▀███▀▀▀██▄   ███    ███ ▀█████████▄ ███      ███    ███ │
+   │    ╭───╮    ███   ███   ███   ███    █▀     ▀███▀▀██ ███      ███    █▀  │
+   │   ╭┴───┴╮   ███   ███   ███  ▄███            ███   ▀ ███      ███        │
+   │   │ ◈⇄◈ │   ███   ███   ███ ▀▀███ ████▄      ███     ███    ▀███████████ │
+   │   ╰┬───┬╯   ███   ███   ███   ███    ███     ███     ███             ███ │
+   │    ╰───╯    ███   ███   ███   ███    ███     ███     ███▌    ▄ ▄█    ███ │
+   │     ╲ ╱      ▀█   ███   █▀    ████████▀     ▄████▀   █████▄▄██ ▄████████ │
+   │      ▼                                               ▀                   │
+   ├──────────────────────────────────────────────────────────────────────────┤
+   │  X.509 Root/Int CA · Mutual TLS · OpenSSH CA · RFC 8555 ACME · MCP 2.0  │
+   ╰──────────────────────────────────────────────────────────────────────────╯</pre>
+
+      <p class="hero-lead">
+        <strong>Zero-CGO, single-binary Go 1.26 cryptographic authority &amp; Model Context Protocol (MCP) server.</strong>
+        Provision multi-tier X.509 Root &amp; Intermediate CAs, Mutual TLS (mTLS) certificates, OpenSSH User &amp; Host CAs, free public Let's Encrypt / ZeroSSL / Buypass / Google Trust ACME certificates, and ready-to-run mTLS bundles for <strong>FastAPI, Spring Boot 3, MCP, NGINX, Vite, Proxmox VE, and OpenSSH</strong>.
+      </p>
+
+      <div class="hero-actions">
+        <a href="https://github.com/bsommers/mgtls/releases/tag/v1.0.0" class="btn btn-primary">⬇ Release Binaries (v1.0.0)</a>
+        <a href="#quickstart" class="btn btn-outline">⚡ Interactive Quickstart</a>
+        <a href="https://github.com/bsommers/mgtls" class="btn btn-outline">★ View Source on GitHub</a>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-value">0 CGO</div>
+          <div class="stat-label">Pure Go 1.26 Static Binary</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">7 Targets</div>
+          <div class="stat-label">FastAPI · Spring · MCP · NGINX · Vite · PVE · SSH</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">18 Tools</div>
+          <div class="stat-label">MCP JSON-RPC 2.0 Server (stdio + mTLS HTTPS)</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">5 ACME CAs</div>
+          <div class="stat-label">Let's Encrypt · ZeroSSL · Buypass · Google · Custom</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">SSH + X.509</div>
+          <div class="stat-label">Dual PKI &amp; OpenSSH User/Host Authorities</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Quickstart Section -->
+    <section id="quickstart">
+      <div class="section-header">
+        <div class="section-eyebrow">Quickstart Workflows</div>
+        <h2 class="section-title">Three Ways to Orchestrate Cryptography</h2>
+        <p class="section-desc">Use the imperative CLI, apply a declarative <code class="inline">mgtls.yaml</code> fleet manifest, or expose <code class="inline">mgtls mcp serve</code> to AI agents over <code class="inline">stdio</code> or Mutual TLS HTTPS.</p>
+      </div>
+
+      <div class="tabs-wrapper">
+        <div class="tab-header" role="tablist">
+          <button class="tab-btn active" onclick="switchTab(event, 'tab-cli')">1. Imperative CLI Workflow</button>
+          <button class="tab-btn" onclick="switchTab(event, 'tab-yaml')">2. Declarative Fleet (mgtls.yaml)</button>
+          <button class="tab-btn" onclick="switchTab(event, 'tab-mcp')">3. MCP Server (stdio &amp; mTLS HTTPS)</button>
+          <button class="tab-btn" onclick="switchTab(event, 'tab-ssh')">4. OpenSSH User &amp; Host CA</button>
+        </div>
+
+        <div id="tab-cli" class="tab-panel active">
+          <button class="copy-btn" onclick="copyCode('code-cli', this)">Copy</button>
+          <pre class="code-block" id="code-cli"># Build static zero-CGO binary from ./src/cmd/mgtls
+CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/mgtls ./src/cmd/mgtls
+
+# Initialize atomic .mgtls workspace (0700 dirs, 0600 private keys)
+./bin/mgtls init
+
+# Create Root CA (Ed25519) and Intermediate CA (ECDSA P-256)
+./bin/mgtls ca create --name corp-root-ca --cn "Acme Corp Root CA" --algo ed25519 --days 3650
+./bin/mgtls ca create --name corp-intermediate-ca --parent corp-root-ca --cn "Acme Corp Intermediate CA" --algo ecdsa-p256 --days 1825
+
+# Issue Server &amp; Client mTLS leaf certificates (with DNS, IP, and SPIFFE URI SANs)
+./bin/mgtls cert issue --name api-srv --ca corp-intermediate-ca --cn localhost --role server --dns "localhost,api.internal" --ip "127.0.0.1"
+./bin/mgtls cert issue --name api-client --ca corp-intermediate-ca --cn billing-worker --role client --uri "spiffe://corp.internal/sa/billing"
+
+# Verify full chain + EKU role + SANs, then generate a drop-in FastAPI mTLS bundle
+./bin/mgtls cert verify --cert .mgtls/certs/api-srv/cert.pem --ca .mgtls/certs/api-srv/ca-chain.pem --dns localhost --role server
+./bin/mgtls target generate --type fastapi --name fastapi-orders --ca corp-intermediate-ca --server-cert api-srv --client-cert api-client --mtls --out ./out-fastapi</pre>
+        </div>
+
+        <div id="tab-yaml" class="tab-panel">
+          <button class="copy-btn" onclick="copyCode('code-yaml', this)">Copy</button>
+          <pre class="code-block" id="code-yaml"># Reconcile an entire multi-tier X.509 PKI, OpenSSH CA fleet, and all 7 framework targets idempotently:
+./bin/mgtls --store-dir .mgtls-fleet apply -f examples/fleet/mgtls.yaml
+
+# Inspect cryptographic inventory (CAs, leaf certs, SSH CAs, ACME orders, target bundles)
+./bin/mgtls --store-dir .mgtls-fleet status
+
+# Run automated health, expiration, CRL revocation, and 0600 key-permission audit
+./bin/mgtls --store-dir .mgtls-fleet doctor --warn-days 30</pre>
+        </div>
+
+        <div id="tab-mcp" class="tab-panel">
+          <button class="copy-btn" onclick="copyCode('code-mcp', this)">Copy</button>
+          <pre class="code-block" id="code-mcp"># 1. Run MCP JSON-RPC 2.0 Server over stdio (Claude Desktop, Cursor, Windsurf, Cline)
+./bin/mgtls --store-dir .mgtls mcp serve --transport stdio
+
+# 2. Run MCP Server over HTTPS with strict Mutual TLS (RequireAndVerifyClientCert)
+./bin/mgtls --store-dir .mgtls mcp serve \
+  --transport http \
+  --addr 127.0.0.1:8444 \
+  --tls-cert .mgtls/certs/api-srv/fullchain.pem \
+  --tls-key .mgtls/certs/api-srv/key.pem \
+  --client-ca .mgtls/certs/api-srv/ca-chain.pem</pre>
+        </div>
+
+        <div id="tab-ssh" class="tab-panel">
+          <button class="copy-btn" onclick="copyCode('code-ssh', this)">Copy</button>
+          <pre class="code-block" id="code-ssh"># 1. Create dedicated OpenSSH User CA and Host CA
+mgtls ssh ca-create --name corp-ssh-user-ca --type user --algo ed25519
+mgtls ssh ca-create --name corp-ssh-host-ca --type host --algo ed25519
+
+# 2. Sign a User Certificate (30-day validity, principals: alice,admin,sre)
+mgtls ssh sign --name alice-ssh --ca corp-ssh-user-ca --type user \
+  --key-id "alice@corp.internal" --principals "alice,admin,sre" --hours 720
+
+# 3. Sign a Host Certificate (1-year validity, principals: bastion.corp.internal,10.0.0.10)
+mgtls ssh sign --name bastion-host-ssh --ca corp-ssh-host-ca --type host \
+  --key-id "bastion.corp.internal" --principals "bastion.corp.internal,10.0.0.10" --hours 8760
+
+# 4. Generate complete sshd_config, ssh_config, authorized_principals &amp; @cert-authority known_hosts
+mgtls ssh config-bundle --name corp-ssh-fleet \
+  --user-ca corp-ssh-user-ca --host-ca corp-ssh-host-ca \
+  --user-cert alice-ssh --host-cert bastion-host-ssh \
+  --hosts "*.corp.internal,10.0.0.*" --principals "alice,admin,sre" \
+  --out ./openssh-fleet-bundle</pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- Architecture & PKI Chain Overview -->
+    <section id="architecture">
+      <div class="section-header">
+        <div class="section-eyebrow">System Architecture &amp; PKI Hierarchy</div>
+        <h2 class="section-title">Layered Zero-CGO Cryptographic Engine</h2>
+        <p class="section-desc">Every CLI flag and MCP tool call routes through the same deterministic Go packages backed by an atomic <code class="inline">.mgtls</code> workspace enforcing <code class="inline">0600</code> private key permissions.</p>
+      </div>
+
+      <div class="arch-grid">
+        <div class="arch-layer">
+          <h3>◈ 1. Unified Entrypoints (<code class="inline">src/cmd/mgtls</code>)</h3>
+          <p>Single static binary (<code class="inline">src/cmd/mgtls</code>) exposing both human-friendly CLI subcommands and a compliant MCP <code class="inline">2024-11-05</code> JSON-RPC 2.0 server.</p>
+          <div class="arch-pills">
+            <span class="pill">mgtls ca / cert</span>
+            <span class="pill">mgtls ssh / acme</span>
+            <span class="pill">mgtls target / apply</span>
+            <span class="pill">mgtls mcp serve</span>
+          </div>
+        </div>
+
+        <div class="arch-layer">
+          <h3>◈ 2. X.509 PKI &amp; mTLS (<code class="inline">src/pkg/pki</code>)</h3>
+          <p>Multi-tier Root CAs (<code class="inline">MaxPathLen: 2</code>) &amp; Intermediate CAs (<code class="inline">MaxPathLen: 1</code>), Server/Client/mTLS EKU profiles, SANs (DNS, IP, Email, SPIFFE URI), PKCS#12, and RFC 5280 CRLs.</p>
+          <div class="arch-pills">
+            <span class="pill">Ed25519</span>
+            <span class="pill">ECDSA P-256 / P-384</span>
+            <span class="pill">RSA 2048 / 4096</span>
+            <span class="pill">PKCS#12 &amp; CRL v2</span>
+          </div>
+        </div>
+
+        <div class="arch-layer">
+          <h3>◈ 3. OpenSSH CA (<code class="inline">src/pkg/sshca</code>)</h3>
+          <p>Eliminates TOFU warnings and static <code class="inline">authorized_keys</code> sprawl using <code class="inline">SSH_CERT_TYPE_USER</code> and <code class="inline">SSH_CERT_TYPE_HOST</code> certificates with principal enforcement.</p>
+          <div class="arch-pills">
+            <span class="pill">User CA</span>
+            <span class="pill">Host CA</span>
+            <span class="pill">TrustedUserCAKeys</span>
+            <span class="pill">@cert-authority</span>
+          </div>
+        </div>
+
+        <div class="arch-layer">
+          <h3>◈ 4. RFC 8555 ACME v2 (<code class="inline">src/pkg/acme</code>)</h3>
+          <p>Pure-Go ACME v2 client with JWS ES256 request signing, External Account Binding (EAB HMAC-SHA256), 3 challenge solvers, and an in-memory mock ACME server.</p>
+          <div class="arch-pills">
+            <span class="pill">HTTP-01</span>
+            <span class="pill">TLS-ALPN-01 (acme-tls/1)</span>
+            <span class="pill">DNS-01 (_acme-challenge)</span>
+            <span class="pill">RFC 8555 EAB</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7 Target Frameworks -->
+    <section id="targets">
+      <div class="section-header">
+        <div class="section-eyebrow">Drop-In Platform Generators (pkg/targets)</div>
+        <h2 class="section-title">7 Production-Ready Framework &amp; Server Scaffolds</h2>
+        <p class="section-desc">Run <code class="inline">mgtls target generate --type &lt;target&gt;</code> or call the <code class="inline">target_generate</code> MCP tool to emit complete server configs, client harnesses, and verification scripts.</p>
+      </div>
+
+      <div class="cards-grid">
+        <div class="card">
+          <div>
+            <div class="card-top">
+              <span class="card-title">Python FastAPI + Uvicorn</span>
+              <span class="port-tag">:8443 · mTLS</span>
+            </div>
+            <p class="card-body">Generates a FastAPI server with Uvicorn <code class="inline">ssl_cert_reqs=ssl.CERT_REQUIRED</code>, ASGI peer certificate attribute extraction, and an <code class="inline">httpx</code> mTLS client.</p>
+          </div>
+          <ul class="artifact-list">
+            <li>app.py &amp; run_server.sh</li>
+            <li>client_mtls.py (httpx.Client SSLContext)</li>
+            <li>verify_mtls.sh</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div>
+            <div class="card-top">
+              <span class="card-title">Spring Boot 3.2+</span>
+              <span class="port-tag">:8443 · SSL Bundles</span>
+            </div>
+            <p class="card-body">Native Spring Boot 3.2+ PEM SSL bundles (<code class="inline">client-auth: need</code>) plus PKCS#12 keystores, Spring Security X.509 CN filter, and <code class="inline">RestClient</code> mTLS bean.</p>
+          </div>
+          <ul class="artifact-list">
+            <li>application-tls.yml</li>
+            <li>MtlsSecurityConfig.java</li>
+            <li>MtlsRestClientConfig.java &amp; verify_mtls.sh</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div>
+            <div class="card-top">
+              <span class="card-title">MCP Server (mTLS)</span>
+              <span class="port-tag">:8444 · JSON-RPC 2.0</span>
+            </div>
+            <p class="card-body">Secures remote Model Context Protocol servers with mutual TLS across TypeScript/Node.js, Python, and NGINX sidecar reverse proxies plus Claude/Cursor configs.</p>
+          </div>
+          <ul class="artifact-list">
+            <li>mcp_server_mtls.ts &amp; mcp_server_mtls.py</li>
+            <li>mcp_client_config.json</li>
+            <li>nginx_mcp_sidecar.conf &amp; verify_mcp_mtls.sh</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div>
+            <div class="card-top">
+              <span class="card-title">NGINX Reverse Proxy</span>
+              <span class="port-tag">:443 · TLS 1.3</span>
+            </div>
+            <p class="card-body">Hardened NGINX TLS 1.2/1.3 reverse proxy enforcing <code class="inline">ssl_verify_client on</code>, optional CRL checking, and upstream <code class="inline">X-SSL-Client-S-DN</code> headers.</p>
+          </div>
+          <ul class="artifact-list">
+            <li>nginx-mtls.conf</li>
+            <li>verify_nginx_mtls.sh</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div>
+            <div class="card-top">
+              <span class="card-title">Vite Dev &amp; Preview Server</span>
+              <span class="port-tag">:5173 · node:tls</span>
+            </div>
+            <p class="card-body">TypeScript <code class="inline">vite.config.mtls.ts</code> configuring <code class="inline">node:https</code> with <code class="inline">requestCert: true</code>, peer certificate inspection middleware, and a Node <code class="inline">https.Agent</code> client.</p>
+          </div>
+          <ul class="artifact-list">
+            <li>vite.config.mtls.ts</li>
+            <li>client_fetch_mtls.mjs</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div>
+            <div class="card-top">
+              <span class="card-title">Proxmox VE (pveproxy)</span>
+              <span class="port-tag">:8006 · Hypervisor</span>
+            </div>
+            <p class="card-body">Automated certificate deployment for Proxmox VE nodes via <code class="inline">pvenode cert set</code> or direct <code class="inline">/etc/pve/local/pveproxy-ssl.pem</code> installation and service reload.</p>
+          </div>
+          <ul class="artifact-list">
+            <li>deploy_proxmox_cert.sh</li>
+            <li>proxmox_pveproxy_verify.sh</li>
+            <li>README-proxmox.md</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div>
+            <div class="card-top">
+              <span class="card-title">OpenSSH Server &amp; Client CA</span>
+              <span class="port-tag">:22 · SSH CA</span>
+            </div>
+            <p class="card-body">Drop-in <code class="inline">sshd_config.d/mgtls-ca.conf</code> (<code class="inline">TrustedUserCAKeys</code>, <code class="inline">HostCertificate</code>), client <code class="inline">@cert-authority</code> <code class="inline">known_hosts</code>, and <code class="inline">authorized_principals</code>.</p>
+          </div>
+          <ul class="artifact-list">
+            <li>sshd_ca.conf &amp; ssh_client_ca.conf</li>
+            <li>known_hosts_cert_authority &amp; authorized_principals</li>
+            <li>deploy_ssh_ca.sh</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Free Public ACME Providers -->
+    <section id="acme">
+      <div class="section-header">
+        <div class="section-eyebrow">Public Free Encryption (pkg/acme)</div>
+        <h2 class="section-title">Built-In Free Public ACME v2 Certificate Authorities</h2>
+        <p class="section-desc">Obtain publicly trusted certificates with <code class="inline">mgtls acme obtain --provider &lt;id&gt;</code> using HTTP-01, TLS-ALPN-01, or DNS-01 challenges.</p>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Provider ID</th>
+              <th>Certificate Authority</th>
+              <th>RFC 8555 Directory URL</th>
+              <th>EAB Required</th>
+              <th>Supported Challenges</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code class="inline">letsencrypt</code></td>
+              <td><strong>Let's Encrypt (Production)</strong></td>
+              <td><code class="inline">https://acme-v02.api.letsencrypt.org/directory</code></td>
+              <td>No</td>
+              <td><code class="inline">http-01</code>, <code class="inline">tls-alpn-01</code>, <code class="inline">dns-01</code></td>
+            </tr>
+            <tr>
+              <td><code class="inline">letsencrypt-staging</code></td>
+              <td><strong>Let's Encrypt (Staging)</strong></td>
+              <td><code class="inline">https://acme-staging-v02.api.letsencrypt.org/directory</code></td>
+              <td>No</td>
+              <td><code class="inline">http-01</code>, <code class="inline">tls-alpn-01</code>, <code class="inline">dns-01</code></td>
+            </tr>
+            <tr>
+              <td><code class="inline">zerossl</code></td>
+              <td><strong>ZeroSSL (90-Day Free DV)</strong></td>
+              <td><code class="inline">https://acme.zerossl.com/v2/DV90</code></td>
+              <td>Yes (<code class="inline">--eab-kid</code>, <code class="inline">--eab-hmac-key</code>)</td>
+              <td><code class="inline">http-01</code>, <code class="inline">dns-01</code></td>
+            </tr>
+            <tr>
+              <td><code class="inline">buypass</code></td>
+              <td><strong>Buypass Go SSL (180-Day Free DV)</strong></td>
+              <td><code class="inline">https://api.buypass.com/acme/directory</code></td>
+              <td>No</td>
+              <td><code class="inline">http-01</code>, <code class="inline">dns-01</code></td>
+            </tr>
+            <tr>
+              <td><code class="inline">google</code></td>
+              <td><strong>Google Trust Services</strong></td>
+              <td><code class="inline">https://dv.acme-v02.api.pki.goog/directory</code></td>
+              <td>Yes (<code class="inline">--eab-kid</code>, <code class="inline">--eab-hmac-key</code>)</td>
+              <td><code class="inline">http-01</code>, <code class="inline">tls-alpn-01</code>, <code class="inline">dns-01</code></td>
+            </tr>
+            <tr>
+              <td><code class="inline">custom</code></td>
+              <td><strong>Custom RFC 8555 CA (Step-CA / Pebble)</strong></td>
+              <td>Custom <code class="inline">--directory-url</code></td>
+              <td>Optional</td>
+              <td><code class="inline">http-01</code>, <code class="inline">tls-alpn-01</code>, <code class="inline">dns-01</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- MCP Tools Catalog -->
+    <section id="mcp">
+      <div class="section-header">
+        <div class="section-eyebrow">Model Context Protocol (pkg/mcpserver)</div>
+        <h2 class="section-title">18 MCP Tools · 3 Resources · 3 Guided Prompts</h2>
+        <p class="section-desc">Connect Claude Desktop, Cursor, Windsurf, or custom AI agents to <code class="inline">mgtls mcp serve</code> over <code class="inline">stdio</code> or Mutual TLS HTTPS.</p>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>MCP Tool Name</th>
+              <th>Subsystem</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><code class="inline">pki_create_ca</code></td><td>X.509 PKI</td><td>Create an X.509 Root CA or Intermediate CA (signed by <code class="inline">parent_ca</code>) in the store</td></tr>
+            <tr><td><code class="inline">pki_issue_cert</code></td><td>X.509 PKI</td><td>Issue an X.509 Server, Client, or dual mTLS leaf certificate with DNS/IP/URI SANs and PKCS#12 bundle</td></tr>
+            <tr><td><code class="inline">pki_self_sign</code></td><td>X.509 PKI</td><td>Issue a standalone self-signed X.509 certificate (Server, Client, or mTLS)</td></tr>
+            <tr><td><code class="inline">pki_inspect</code></td><td>X.509 PKI</td><td>Parse and inspect an X.509 certificate file or named store certificate (SHA-256 fingerprint, SANs, EKUs)</td></tr>
+            <tr><td><code class="inline">pki_verify</code></td><td>X.509 PKI</td><td>Verify X.509 certificate chain, Extended Key Usage role, SAN hostname/IP, and CRL revocation status</td></tr>
+            <tr><td><code class="inline">pki_revoke</code></td><td>X.509 PKI</td><td>Revoke an issued certificate in the store and regenerate the CA's signed X.509 v2 CRL</td></tr>
+            <tr><td><code class="inline">pki_trust_script</code></td><td>X.509 PKI</td><td>Generate OS trust store installation scripts (Debian/Ubuntu, RHEL/Fedora, Arch, macOS, Windows)</td></tr>
+            <tr><td><code class="inline">ssh_create_ca</code></td><td>OpenSSH CA</td><td>Create an OpenSSH User CA or Host CA keypair (Ed25519, ECDSA P-256, RSA-4096)</td></tr>
+            <tr><td><code class="inline">ssh_sign_cert</code></td><td>OpenSSH CA</td><td>Sign an OpenSSH User or Host certificate (<code class="inline">*-cert.pub</code>) with principals and validity window</td></tr>
+            <tr><td><code class="inline">ssh_inspect</code></td><td>OpenSSH CA</td><td>Parse and inspect an OpenSSH certificate file (<code class="inline">*-cert.pub</code>)</td></tr>
+            <tr><td><code class="inline">ssh_config_bundle</code></td><td>OpenSSH CA</td><td>Generate <code class="inline">sshd_config</code> drop-in, <code class="inline">ssh_config</code> drop-in, <code class="inline">@cert-authority known_hosts</code>, and <code class="inline">authorized_principals</code></td></tr>
+            <tr><td><code class="inline">acme_providers</code></td><td>ACME v2</td><td>List supported free public ACME v2 CAs (Let's Encrypt, ZeroSSL, Buypass, Google Trust Services)</td></tr>
+            <tr><td><code class="inline">acme_obtain</code></td><td>ACME v2</td><td>Obtain a signed TLS certificate from an ACME v2 CA using HTTP-01, TLS-ALPN-01, or DNS-01</td></tr>
+            <tr><td><code class="inline">target_list</code></td><td>Targets</td><td>List all 7 supported framework &amp; server target integrations and default ports</td></tr>
+            <tr><td><code class="inline">target_generate</code></td><td>Targets</td><td>Generate ready-to-run TLS/mTLS or SSH CA bundles for FastAPI, Spring Boot, MCP, NGINX, Vite, Proxmox, or OpenSSH</td></tr>
+            <tr><td><code class="inline">profile_apply</code></td><td>Fleet Engine</td><td>Apply a declarative YAML or JSON fleet manifest (<code class="inline">mgtls.yaml</code>) from file path or inline string</td></tr>
+            <tr><td><code class="inline">store_status</code></td><td>Workspace</td><td>Return the full cryptographic workspace manifest inventory</td></tr>
+            <tr><td><code class="inline">store_doctor</code></td><td>Workspace</td><td>Audit the store for expiring/expired certificates, revocations, missing files, and <code class="inline">0600</code> key permissions</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Cookbooks & IaC / CI-CD Flows -->
+    <section id="cookbooks">
+      <div class="section-header">
+        <div class="section-eyebrow">Executable Cookbooks &amp; IaC / CI-CD Flows (cookbooks/)</div>
+        <h2 class="section-title">5 Runnable Cookbook Scripts + Terraform, Ansible, K8s &amp; CI/CD</h2>
+        <p class="section-desc">Execute end-to-end cryptographic workflows in isolated workspaces or integrate directly into Terraform/OpenTofu, Ansible, Kubernetes, Docker Compose, GitHub Actions, and GitLab CI.</p>
+      </div>
+
+      <div class="cards-grid">
+        <div class="card">
+          <div>
+            <div class="card-top">
+              <span class="card-title">Cookbook 01: Local PKI &amp; Mesh</span>
+              <span class="port-tag">Executable .sh</span>
+            </div>
+            <p class="card-body">Provisions an Offline Root CA, Issuing Intermediate CA, Server/Client mTLS leaf certs with SPIFFE SANs, and emits FastAPI, Spring Boot, NGINX &amp; Vite bundles.</p>
+          </div>
+          <ul class="artifact-list">
+            <li>./cookbooks/01-local-pki-and-mtls-mesh.sh</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div>
+            <div class="card-top">
+              <span class="card-title">Cookbook 02: Zero-Trust MCP</span>
+              <span class="port-tag">JSON-RPC 2.0</span>
+            </div>
+            <p class="card-body">Streams live MCP JSON-RPC 2.0 tool calls (<code class="inline">pki_create_ca</code>, <code class="inline">pki_issue_cert</code>, <code class="inline">target_generate</code>) to <code class="inline">mgtls mcp serve</code>.</p>
+          </div>
+          <ul class="artifact-list">
+            <li>./cookbooks/02-mcp-agent-zero-trust-mtls.sh</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div>
+            <div class="card-top">
+              <span class="card-title">Cookbook 03: OpenSSH CA Fleet</span>
+              <span class="port-tag">Zero-TOFU SSH</span>
+            </div>
+            <p class="card-body">Creates dedicated OpenSSH User &amp; Host CAs, signs 24h on-call SRE and bastion certificates, and builds <code class="inline">@cert-authority</code> fleet bundles.</p>
+          </div>
+          <ul class="artifact-list">
+            <li>./cookbooks/03-openssh-zero-trust-ca-fleet.sh</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div>
+            <div class="card-top">
+              <span class="card-title">Cookbook 04: Proxmox &amp; ACME</span>
+              <span class="port-tag">:8006 + RFC 8555</span>
+            </div>
+            <p class="card-body">Queries all 5 free public ACME v2 CAs, issues a 397-day Proxmox VE node certificate, and generates <code class="inline">pvenode cert set</code> deployment scripts.</p>
+          </div>
+          <ul class="artifact-list">
+            <li>./cookbooks/04-proxmox-and-acme-automation.sh</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div>
+            <div class="card-top">
+              <span class="card-title">Cookbook 05: IaC &amp; K8s Secrets</span>
+              <span class="port-tag">K8s / TF / CI</span>
+            </div>
+            <p class="card-body">Reconciles <code class="inline">mgtls.yaml</code>, exports Kubernetes <code class="inline">kubernetes.io/tls</code> Secrets (<code class="inline">tls.crt</code>, <code class="inline">tls.key</code>, <code class="inline">ca.crt</code>), and runs <code class="inline">mgtls doctor</code>.</p>
+          </div>
+          <ul class="artifact-list">
+            <li>./cookbooks/05-iac-and-cicd-integration.sh</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div>
+            <div class="card-top">
+              <span class="card-title">Terraform, Ansible &amp; CI/CD</span>
+              <span class="port-tag">IaC Templates</span>
+            </div>
+            <p class="card-body">Ready-to-run Terraform/OpenTofu <code class="inline">external</code> bridge, Ansible fleet playbook, Docker Compose mTLS stack, and GitHub Actions / GitLab CI templates.</p>
+          </div>
+          <ul class="artifact-list">
+            <li>cookbooks/iac-cicd/terraform/main.tf</li>
+            <li>cookbooks/iac-cicd/ansible/site.yml</li>
+            <li>cookbooks/cicd/github-actions-mgtls.yml</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Documentation & Guides -->
+    <section id="docs">
+      <div class="section-header">
+        <div class="section-eyebrow">Documentation &amp; Specifications</div>
+        <h2 class="section-title">Comprehensive Engineering Guides</h2>
+        <p class="section-desc">Explore architecture specifications, cryptographic profiles, and runnable example harnesses directly in the repository.</p>
+      </div>
+
+      <div class="cards-grid">
+        <a href="https://github.com/bsommers/mgtls/blob/main/docs/architecture/SYSTEM_ARCHITECTURE.md" class="card">
+          <div>
+            <div class="card-top">
+              <span class="card-title">System Architecture</span>
+              <span class="port-tag">Architecture</span>
+            </div>
+            <p class="card-body">Layered architecture, component interaction diagrams, security model, and atomic <code class="inline">.mgtls</code> workspace layout.</p>
+          </div>
+        </a>
+
+        <a href="https://github.com/bsommers/mgtls/blob/main/docs/specs/CRYPTO_AND_PROTOCOL_SPEC.md" class="card">
+          <div>
+            <div class="card-top">
+              <span class="card-title">Crypto &amp; Protocol Spec</span>
+              <span class="port-tag">X.509 / SSH / ACME</span>
+            </div>
+            <p class="card-body">X.509 v3 profile matrices, key usages, OpenSSH certificate wire format, and RFC 8555 ACME v2 state machine.</p>
+          </div>
+        </a>
+
+        <a href="https://github.com/bsommers/mgtls/blob/main/docs/specs/MCP_SERVER_SPEC.md" class="card">
+          <div>
+            <div class="card-top">
+              <span class="card-title">MCP Server Specification</span>
+              <span class="port-tag">JSON-RPC 2.0</span>
+            </div>
+            <p class="card-body">Complete specification of all 18 MCP tools, 3 resources, 3 guided prompts, and <code class="inline">stdio</code> / mTLS HTTPS transports.</p>
+          </div>
+        </a>
+
+        <a href="https://github.com/bsommers/mgtls/blob/main/docs/user-guide/USER_GUIDE.md" class="card">
+          <div>
+            <div class="card-top">
+              <span class="card-title">User Guide &amp; CLI Reference</span>
+              <span class="port-tag">CLI + YAML</span>
+            </div>
+            <p class="card-body">Step-by-step CLI tutorials, Root/Intermediate CA lifecycles, CRL revocation, and declarative <code class="inline">mgtls.yaml</code> manifests.</p>
+          </div>
+        </a>
+
+        <a href="https://github.com/bsommers/mgtls/blob/main/docs/user-guide/SSH_CA_AND_ACME_GUIDE.md" class="card">
+          <div>
+            <div class="card-top">
+              <span class="card-title">OpenSSH CA &amp; ACME Guide</span>
+              <span class="port-tag">SSH + ACME</span>
+            </div>
+            <p class="card-body">Production rollout guide for OpenSSH User/Host CAs and Let's Encrypt, ZeroSSL, Buypass, and Google Trust ACME automation.</p>
+          </div>
+        </a>
+
+        <a href="https://github.com/bsommers/mgtls/blob/main/docs/user-guide/TARGETS_GUIDE.md" class="card">
+          <div>
+            <div class="card-top">
+              <span class="card-title">Target Integrations Guide</span>
+              <span class="port-tag">7 Platforms</span>
+            </div>
+            <p class="card-body">Deep-dive configuration guides for FastAPI, Spring Boot 3, MCP Server, NGINX, Vite, Proxmox VE, and OpenSSH.</p>
+          </div>
+        </a>
+
+        <a href="https://github.com/bsommers/mgtls/blob/main/docs/cookbooks/COOKBOOKS.md" class="card">
+          <div>
+            <div class="card-top">
+              <span class="card-title">Operational Cookbooks</span>
+              <span class="port-tag">5 Cookbooks</span>
+            </div>
+            <p class="card-body">End-to-end executable cookbook workflows (<code class="inline">cookbooks/*.sh</code>) with Mermaid architectural diagrams.</p>
+          </div>
+        </a>
+
+        <a href="https://github.com/bsommers/mgtls/blob/main/docs/cookbooks/IAC_AND_CICD_GUIDE.md" class="card">
+          <div>
+            <div class="card-top">
+              <span class="card-title">IaC &amp; CI/CD Integration Guide</span>
+              <span class="port-tag">TF / Ansible / K8s</span>
+            </div>
+            <p class="card-body">Integrate <code class="inline">mgtls</code> with Terraform/OpenTofu, Ansible, Kubernetes Secrets, Docker Compose, GitHub Actions, and GitLab CI.</p>
+          </div>
+        </a>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container footer-inner">
+      <div>
+        <strong>mgtls v1.0.0</strong> — Released under the <a href="https://github.com/bsommers/mgtls/blob/main/LICENSE">MIT License</a>.
+      </div>
+      <div>
+        <a href="https://github.com/bsommers/mgtls">GitHub Repository</a> ·
+        <a href="https://github.com/bsommers/mgtls/releases/tag/v1.0.0">Releases</a> ·
+        <a href="https://github.com/bsommers/mgtls/blob/main/docs/CHANGELOG.md">Changelog</a> ·
+        <a href="https://github.com/bsommers/mgtls/blob/main/docs/CAPABILITIES.md">Capabilities</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    function switchTab(evt, panelId) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
+      evt.currentTarget.classList.add('active');
+      document.getElementById(panelId).classList.add('active');
+    }
+
+    function copyCode(elementId, btn) {
+      const text = document.getElementById(elementId).innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        const orig = btn.innerText;
+        btn.innerText = 'Copied!';
+        setTimeout(() => { btn.innerText = orig; }, 1600);
+      });
+    }
+  </script>
+</body>
+</html>

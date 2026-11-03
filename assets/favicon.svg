@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="mgtls favicon">
+  <defs>
+    <linearGradient id="favGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="#070b14" stroke="url(#favGrad)" stroke-width="2.5"/>
+  <path d="M32 8 L52 16 V32 C52 45 43 53 32 57 C21 53 12 45 12 32 V16 L32 8 Z"
+        fill="#0f172a" stroke="url(#favGrad)" stroke-width="2.5" stroke-linejoin="round"/>
+  <path d="M25 27 V22 C25 18 28 15 32 15 C36 15 39 18 39 22 V27"
+        fill="none" stroke="#f8fafc" stroke-width="3" stroke-linecap="round"/>
+  <rect x="20" y="27" width="24" height="19" rx="4" fill="#070b14" stroke="url(#favGrad)" stroke-width="2"/>
+  <path d="M24 34 H38 M35 31 L39 34 L35 37" fill="none" stroke="#10b981" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M40 40 H26 M29 37 L25 40 L29 43" fill="none" stroke="#38bdf8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -1,0 +1,41 @@
+# Reusable GitLab CI Pipeline Template for mgtls PKI & Secret Provisioning
+# Include in `.gitlab-ci.yml` via `include: - local: 'cookbooks/cicd/gitlab-ci-mgtls.yml'`
+stages:
+  - build
+  - test
+  - provision-mtls
+
+variables:
+  CGO_ENABLED: "0"
+  MGTLS_STORE_DIR: "${CI_PROJECT_DIR}/.mgtls-ci"
+
+build:mgtls:
+  stage: build
+  image: golang:1.26-alpine
+  script:
+    - go build -trimpath -ldflags="-s -w" -o bin/mgtls ./src/cmd/mgtls
+    - ./bin/mgtls --version
+  artifacts:
+    paths:
+      - bin/mgtls
+    expire_in: 1 day
+
+test:mgtls:
+  stage: test
+  image: golang:1.26
+  script:
+    - go test -race ./src/...
+
+provision:fleet-mtls:
+  stage: provision-mtls
+  image: alpine:3.20
+  dependencies:
+    - build:mgtls
+  script:
+    - ./bin/mgtls --store-dir "${MGTLS_STORE_DIR}" apply -f examples/fleet/mgtls.yaml
+    - ./bin/mgtls --store-dir "${MGTLS_STORE_DIR}" doctor --warn-days 30
+  artifacts:
+    paths:
+      - .mgtls-ci/ca/
+      - .mgtls-ci/targets/
+    expire_in: 7 days

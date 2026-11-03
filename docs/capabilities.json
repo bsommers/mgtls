@@ -1,0 +1,73 @@
+{
+  "schema_version": "1.0.0",
+  "project": "mgtls",
+  "version": "1.0.0",
+  "repository": "https://github.com/bsommers/mgtls",
+  "homepage": "https://bsommers.github.io/mgtls/",
+  "capabilities": [
+    {
+      "id": "CAP-PKI-001",
+      "name": "Multi-Tier X.509 PKI & Mutual TLS (mTLS)",
+      "status": "operational",
+      "since": "1.0.0",
+      "package": "src/pkg/pki",
+      "verification": "go test -race ./src/pkg/pki"
+    },
+    {
+      "id": "CAP-SSH-001",
+      "name": "OpenSSH User & Host Certificate Authorities",
+      "status": "operational",
+      "since": "1.0.0",
+      "package": "src/pkg/sshca",
+      "verification": "go test -race ./src/pkg/sshca"
+    },
+    {
+      "id": "CAP-ACME-001",
+      "name": "RFC 8555 ACME v2 Client & Mock Server (Let's Encrypt, ZeroSSL, Buypass, Google Trust)",
+      "status": "operational",
+      "since": "1.0.0",
+      "package": "src/pkg/acme",
+      "verification": "go test -race ./src/pkg/acme"
+    },
+    {
+      "id": "CAP-TARGETS-001",
+      "name": "7 Target Framework & Server Generators (FastAPI, Spring Boot, MCP, NGINX, Vite, Proxmox, OpenSSH)",
+      "status": "operational",
+      "since": "1.0.0",
+      "package": "src/pkg/targets",
+      "verification": "go test -race ./src/pkg/targets"
+    },
+    {
+      "id": "CAP-PROFILE-001",
+      "name": "Declarative YAML/JSON Fleet Reconciliation (apply) & Health Auditor (doctor)",
+      "status": "operational",
+      "since": "1.0.0",
+      "package": "src/pkg/profile",
+      "verification": "go test -race ./src/pkg/profile"
+    },
+    {
+      "id": "CAP-MCP-001",
+      "name": "Model Context Protocol (MCP) JSON-RPC 2.0 Server (18 Tools, 3 Resources, 3 Prompts over stdio & mTLS HTTPS)",
+      "status": "operational",
+      "since": "1.0.0",
+      "package": "src/pkg/mcpserver",
+      "verification": "go test -race ./src/pkg/mcpserver"
+    },
+    {
+      "id": "CAP-COOKBOOKS-001",
+      "name": "Executable Cookbooks & IaC/CI-CD Integrations (Terraform, Ansible, Kubernetes, Docker Compose, GitHub Actions, GitLab CI)",
+      "status": "operational",
+      "since": "1.0.0",
+      "package": "cookbooks",
+      "verification": "bash cookbooks/05-iac-and-cicd-integration.sh"
+    },
+    {
+      "id": "CAP-HSM-001",
+      "name": "PKCS#11 & YubiKey PIV Hardware Security Module (HSM) Root CA Signing",
+      "status": "planned",
+      "target_release": "1.1.0",
+      "package": "src/pkg/pki",
+      "verification": "planned"
+    }
+  ]
+}

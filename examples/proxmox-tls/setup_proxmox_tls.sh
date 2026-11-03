@@ -20,7 +20,7 @@ if [[ -z "${MGTLS_BIN}" ]]; then
   if [[ -x "${REPO_ROOT}/bin/mgtls" ]]; then
     MGTLS_BIN="${REPO_ROOT}/bin/mgtls"
   else
-    MGTLS_BIN="go run ${REPO_ROOT}/cmd/mgtls"
+    MGTLS_BIN="go run ${REPO_ROOT}/src/cmd/mgtls"
   fi
 fi
 

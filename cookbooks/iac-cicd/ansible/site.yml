@@ -1,0 +1,54 @@
+---
+# Ansible Playbook: Declarative X.509 mTLS & OpenSSH CA Fleet Provisioning with mgtls
+- name: Reconcile Cryptographic Fleet with mgtls and Distribute Bundles
+  hosts: all
+  become: true
+  vars:
+    mgtls_bin: "/usr/local/bin/mgtls"
+    mgtls_store_dir: "/etc/mgtls/store"
+    mgtls_manifest_path: "/etc/mgtls/mgtls.yaml"
+    ssh_ca_dropin_dir: "/etc/ssh/sshd_config.d"
+
+  tasks:
+    - name: Ensure mgtls configuration directory exists (0700)
+      ansible.builtin.file:
+        path: "{{ mgtls_store_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Reconcile declarative fleet manifest idempotently
+      ansible.builtin.command:
+        cmd: "{{ mgtls_bin }} --store-dir {{ mgtls_store_dir }} apply -f {{ mgtls_manifest_path }}"
+      changed_when: false
+
+    - name: Run mgtls doctor verification gate (fail if certs expire within 14 days or keys violate 0600)
+      ansible.builtin.command:
+        cmd: "{{ mgtls_bin }} --store-dir {{ mgtls_store_dir }} doctor --warn-days 14"
+      changed_when: false
+
+    - name: Install OpenSSH User CA public key for TrustedUserCAKeys
+      ansible.builtin.copy:
+        src: "{{ mgtls_store_dir }}/ssh/ca/corp-ssh-user-ca/id_ca.pub"
+        dest: "/etc/ssh/ca/user_ca.pub"
+        owner: root
+        group: root
+        mode: "0644"
+        remote_src: true
+
+    - name: Deploy OpenSSH CA drop-in configuration
+      ansible.builtin.copy:
+        src: "{{ mgtls_store_dir }}/targets/openssh-fleet/sshd_ca.conf"
+        dest: "{{ ssh_ca_dropin_dir }}/50-mgtls-ca.conf"
+        owner: root
+        group: root
+        mode: "0644"
+        remote_src: true
+      notify: Reload sshd
+
+  handlers:
+    - name: Reload sshd
+      ansible.builtin.service:
+        name: sshd
+        state: reloaded

@@ -1,6 +1,39 @@
+<div align="center">
+
+<img src="assets/logo.svg" alt="mgtls — Unified TLS, mTLS, Local/Public CA, OpenSSH CA & Target Provisioning Engine" width="880" />
+
+<br />
+
+[![Release](https://img.shields.io/github/v/release/bsommers/mgtls?style=flat-square&color=10b981)](https://github.com/bsommers/mgtls/releases/tag/v1.0.0)
+[![Go Version](https://img.shields.io/badge/Go-1.26-00ADD8?style=flat-square&logo=go)](https://go.dev/)
+[![CGO_ENABLED=0](https://img.shields.io/badge/CGO__ENABLED-0-06b6d4?style=flat-square)](https://github.com/bsommers/mgtls)
+[![MCP Protocol](https://img.shields.io/badge/MCP-2024--11--05%20%7C%2018%20Tools-a855f7?style=flat-square)](https://bsommers.github.io/mgtls/#mcp)
+[![License: MIT](https://img.shields.io/badge/License-MIT-3b82f6?style=flat-square)](LICENSE)
+[![GitHub Pages](https://img.shields.io/badge/Docs-GitHub%20Pages-10b981?style=flat-square&logo=github)](https://bsommers.github.io/mgtls/)
+
+</div>
+
+```text
+   ╭──────────────────────────────────────────────────────────────────────────╮
+   │               ▄▄▄▄███▄▄▄▄      ▄██████▄      ███      ▄█       ▄████████ │
+   │             ▄██▀▀▀███▀▀▀██▄   ███    ███ ▀█████████▄ ███      ███    ███ │
+   │    ╭───╮    ███   ███   ███   ███    █▀     ▀███▀▀██ ███      ███    █▀  │
+   │   ╭┴───┴╮   ███   ███   ███  ▄███            ███   ▀ ███      ███        │
+   │   │ ◈⇄◈ │   ███   ███   ███ ▀▀███ ████▄      ███     ███    ▀███████████ │
+   │   ╰┬───┬╯   ███   ███   ███   ███    ███     ███     ███             ███ │
+   │    ╰───╯    ███   ███   ███   ███    ███     ███     ███▌    ▄ ▄█    ███ │
+   │     ╲ ╱      ▀█   ███   █▀    ████████▀     ▄████▀   █████▄▄██ ▄████████ │
+   │      ▼                                               ▀                   │
+   ├──────────────────────────────────────────────────────────────────────────┤
+   │  X.509 Root/Int CA · Mutual TLS · OpenSSH CA · RFC 8555 ACME · MCP 2.0  │
+   ╰──────────────────────────────────────────────────────────────────────────╯
+```
+
 # `mgtls` — Unified TLS, mTLS, Local/Public CA, OpenSSH Certificate & Target Provisioning Engine
 
-`mgtls` is a single-binary, pure-Go (`go1.26`, `CGO_ENABLED=0`) cryptographic orchestration CLI and **Model Context Protocol (MCP)** server (`mgtls mcp serve`) that provisions and manages:
+## About
+
+`mgtls` is a zero-CGO (`CGO_ENABLED=0`), single-binary Go 1.26 cryptographic authority, certificate lifecycle engine, and **Model Context Protocol (MCP)** server (`mgtls mcp serve`) built for developers, platform engineers, and autonomous AI agents. It eliminates fragmented `openssl`, `ssh-keygen`, and ACME shell scripts by unifying local multi-tier X.509 PKI, mutual TLS (mTLS), OpenSSH User & Host Certificate Authorities, free public RFC 8555 ACME v2 encryption, and drop-in configuration generation across 7 target platforms (`FastAPI`, `Spring Boot 3`, `MCP Server`, `NGINX`, `Vite`, `Proxmox VE`, and `OpenSSH`):
 
 - **Multi-Tier X.509 PKI & Mutual TLS (mTLS)**: Root CAs, Intermediate CA chains (`fullchain.pem`, `ca-chain.pem`), standalone self-signed certificates, Server/Client/Dual-mTLS leaf certificates, PKCS#12 (`.p12`) & DER bundles, X.509 v2 CRLs, and OS trust store installers.
 - **OpenSSH Certificate Authorities**: Dedicated OpenSSH User CAs (`SSH_CERT_TYPE_USER`) and Host CAs (`SSH_CERT_TYPE_HOST`), Ed25519/ECDSA/RSA keypair generation, principal/validity/extension signing (`*-cert.pub`), certificate inspection, and automated `sshd_config`, `ssh_config`, `authorized_principals`, and `@cert-authority` `known_hosts` bundles.
@@ -14,25 +47,25 @@
 
 ```mermaid
 flowchart TD
-    subgraph Entrypoints["Unified Entrypoints (cmd/mgtls)"]
+    subgraph Entrypoints["Unified Entrypoints (src/cmd/mgtls)"]
         CLI["CLI Commands\n(init, ca, cert, ssh, acme, target, apply, status, doctor)"]
         MCP["MCP JSON-RPC 2.0 Server\n(mgtls mcp serve — stdio & HTTP/HTTPS/mTLS)"]
     end
 
     subgraph Orchestration["Declarative & Agent Orchestration"]
-        Profile["pkg/profile\nDeclarative Fleet Engine (mgtls.yaml) & Doctor"]
-        MCPServer["pkg/mcpserver\n13 MCP Tools · 3 Resources · 3 Guided Prompts"]
+        Profile["src/pkg/profile\nDeclarative Fleet Engine (mgtls.yaml) & Doctor"]
+        MCPServer["src/pkg/mcpserver\n18 MCP Tools · 3 Resources · 3 Guided Prompts"]
     end
 
     subgraph Subsystems["Core Cryptographic & Scaffolding Subsystems"]
-        PKI["pkg/pki\nRoot/Intermediate CAs, Self-Signed,\nServer/Client/mTLS, CRL, PKCS#12, Trust Scripts"]
-        SSHCA["pkg/sshca\nOpenSSH User & Host CAs, Key Signing,\nsshd_config & @cert-authority Bundles"]
-        ACME["pkg/acme\nRFC 8555 ACME v2 Client & Mock Server\n(HTTP-01, TLS-ALPN-01, DNS-01, EAB)"]
-        Targets["pkg/targets\n7 Platform Generators\n(fastapi, springboot, mcp, nginx, vite, proxmox, openssh)"]
+        PKI["src/pkg/pki\nRoot/Intermediate CAs, Self-Signed,\nServer/Client/mTLS, CRL, PKCS#12, Trust Scripts"]
+        SSHCA["src/pkg/sshca\nOpenSSH User & Host CAs, Key Signing,\nsshd_config & @cert-authority Bundles"]
+        ACME["src/pkg/acme\nRFC 8555 ACME v2 Client & Mock Server\n(HTTP-01, TLS-ALPN-01, DNS-01, EAB)"]
+        Targets["src/pkg/targets\n7 Platform Generators\n(fastapi, springboot, mcp, nginx, vite, proxmox, openssh)"]
     end
 
     subgraph Storage["Atomic Cryptographic Workspace"]
-        Store["pkg/store (.mgtls)\n0700 Dirs · 0600 Keys · 0644 Certs · Atomic manifest.json"]
+        Store["src/pkg/store (.mgtls)\n0700 Dirs · 0600 Keys · 0644 Certs · Atomic manifest.json"]
     end
 
     CLI --> Profile
@@ -54,7 +87,7 @@ flowchart TD
 ### 1. Build the Static Binary
 
 ```bash
-CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/mgtls ./cmd/mgtls
+CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/mgtls ./src/cmd/mgtls
 ```
 
 ### 2. Imperative CLI Workflow (Root CA → Intermediate CA → mTLS Certificates → FastAPI Bundle)
@@ -161,12 +194,33 @@ mgtls ssh config-bundle --name corp-ssh-fleet \
 
 | Document | Path | Description |
 | :--- | :--- | :--- |
-| **System Architecture** | [`docs/architecture/SYSTEM_ARCHITECTURE.md`](file:///home/bill/src/sysadmin/mgtls/docs/architecture/SYSTEM_ARCHITECTURE.md) | Layered architecture, component interaction diagrams, security model, and workspace layout |
-| **Cryptography & Protocol Spec** | [`docs/specs/CRYPTO_AND_PROTOCOL_SPEC.md`](file:///home/bill/src/sysadmin/mgtls/docs/specs/CRYPTO_AND_PROTOCOL_SPEC.md) | X.509 v3 profile specifications, key usage matrices, OpenSSH cert format, and RFC 8555 ACME v2 state machine |
-| **MCP Server Specification** | [`docs/specs/MCP_SERVER_SPEC.md`](file:///home/bill/src/sysadmin/mgtls/docs/specs/MCP_SERVER_SPEC.md) | JSON-RPC 2.0 MCP tools, resources, prompts, schemas, and `stdio`/HTTPS-mTLS transport specifications |
-| **User Guide & CLI Reference** | [`docs/user-guide/USER_GUIDE.md`](file:///home/bill/src/sysadmin/mgtls/docs/user-guide/USER_GUIDE.md) | Complete CLI command reference, PKI lifecycle tutorials, and declarative `mgtls.yaml` guide |
-| **OpenSSH CA & ACME Guide** | [`docs/user-guide/SSH_CA_AND_ACME_GUIDE.md`](file:///home/bill/src/sysadmin/mgtls/docs/user-guide/SSH_CA_AND_ACME_GUIDE.md) | Production OpenSSH User/Host CA rollout guide and Let's Encrypt / ZeroSSL / Google Trust ACME automation |
-| **Target Integrations Guide** | [`docs/user-guide/TARGETS_GUIDE.md`](file:///home/bill/src/sysadmin/mgtls/docs/user-guide/TARGETS_GUIDE.md) | Deep-dive configuration guides for FastAPI, Spring Boot 3, MCP, NGINX, Vite, Proxmox VE, and OpenSSH |
+| **GitHub Pages Site** | [`https://bsommers.github.io/mgtls/`](https://bsommers.github.io/mgtls/) | Interactive dark-mode documentation portal, quickstart tabs, target showcase, and MCP tool catalog |
+| **System Architecture** | [`docs/architecture/SYSTEM_ARCHITECTURE.md`](docs/architecture/SYSTEM_ARCHITECTURE.md) | Layered architecture, component interaction diagrams, security model, and workspace layout |
+| **Cryptography & Protocol Spec** | [`docs/specs/CRYPTO_AND_PROTOCOL_SPEC.md`](docs/specs/CRYPTO_AND_PROTOCOL_SPEC.md) | X.509 v3 profile specifications, key usage matrices, OpenSSH cert format, and RFC 8555 ACME v2 state machine |
+| **MCP Server Specification** | [`docs/specs/MCP_SERVER_SPEC.md`](docs/specs/MCP_SERVER_SPEC.md) | JSON-RPC 2.0 MCP tools, resources, prompts, schemas, and `stdio`/HTTPS-mTLS transport specifications |
+| **User Guide & CLI Reference** | [`docs/user-guide/USER_GUIDE.md`](docs/user-guide/USER_GUIDE.md) | Complete CLI command reference, PKI lifecycle tutorials, and declarative `mgtls.yaml` guide |
+| **OpenSSH CA & ACME Guide** | [`docs/user-guide/SSH_CA_AND_ACME_GUIDE.md`](docs/user-guide/SSH_CA_AND_ACME_GUIDE.md) | Production OpenSSH User/Host CA rollout guide and Let's Encrypt / ZeroSSL / Google Trust ACME automation |
+| **Target Integrations Guide** | [`docs/user-guide/TARGETS_GUIDE.md`](docs/user-guide/TARGETS_GUIDE.md) | Deep-dive configuration guides for FastAPI, Spring Boot 3, MCP, NGINX, Vite, Proxmox VE, and OpenSSH |
+| **Operational Cookbooks** | [`docs/cookbooks/COOKBOOKS.md`](docs/cookbooks/COOKBOOKS.md) | 5 end-to-end executable cookbook workflows (`cookbooks/*.sh`) with architectural diagrams |
+| **IaC & CI/CD Integration Guide** | [`docs/cookbooks/IAC_AND_CICD_GUIDE.md`](docs/cookbooks/IAC_AND_CICD_GUIDE.md) | Terraform/OpenTofu, Ansible, Kubernetes TLS Secrets, Docker Compose, GitHub Actions, and GitLab CI |
+| **Capabilities Manifest** | [`docs/CAPABILITIES.md`](docs/CAPABILITIES.md) | Machine-verifiable capabilities registry (`docs/capabilities.json`) and roadmap |
+| **Changelog** | [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | Release history and verification telemetry |
+
+---
+
+## Executable Cookbooks & IaC / CI-CD Flows (`cookbooks/`)
+
+| Cookbook / Template | Path | Description |
+| :--- | :--- | :--- |
+| **Cookbook 01: Local PKI & mTLS Mesh** | [`cookbooks/01-local-pki-and-mtls-mesh.sh`](cookbooks/01-local-pki-and-mtls-mesh.sh) | Offline Root CA → Intermediate CA → Server/Client mTLS certs → FastAPI, Spring Boot, NGINX & Vite bundles |
+| **Cookbook 02: Zero-Trust MCP Agent** | [`cookbooks/02-mcp-agent-zero-trust-mtls.sh`](cookbooks/02-mcp-agent-zero-trust-mtls.sh) | Live JSON-RPC 2.0 session against `mgtls mcp serve` provisioning MCP Server & Client mTLS bundles |
+| **Cookbook 03: OpenSSH CA Fleet** | [`cookbooks/03-openssh-zero-trust-ca-fleet.sh`](cookbooks/03-openssh-zero-trust-ca-fleet.sh) | OpenSSH User CA & Host CA creation, principal key signing, inspection, and `@cert-authority` fleet bundle |
+| **Cookbook 04: Proxmox & ACME v2** | [`cookbooks/04-proxmox-and-acme-automation.sh`](cookbooks/04-proxmox-and-acme-automation.sh) | Proxmox VE (`pveproxy`) node TLS bundle + Let's Encrypt / ZeroSSL / Buypass / Google Trust ACME matrix |
+| **Cookbook 05: IaC & CI/CD Secrets** | [`cookbooks/05-iac-and-cicd-integration.sh`](cookbooks/05-iac-and-cicd-integration.sh) | Reconciles `mgtls.yaml`, exports Kubernetes `kubernetes.io/tls` Secrets, Terraform JSON, and runs `doctor` |
+| **Terraform / OpenTofu Bridge** | [`cookbooks/iac-cicd/terraform/`](cookbooks/iac-cicd/terraform) | `main.tf` + `mgtls-external.sh` (`hashicorp/external` data source bridge) |
+| **Ansible Fleet Playbook** | [`cookbooks/iac-cicd/ansible/site.yml`](cookbooks/iac-cicd/ansible/site.yml) | Automated fleet reconciliation, `doctor` gate, and OpenSSH CA distribution playbook |
+| **Docker Compose mTLS Stack** | [`cookbooks/iac-cicd/docker-compose/docker-compose.mtls.yml`](cookbooks/iac-cicd/docker-compose/docker-compose.mtls.yml) | Containerized NGINX mTLS reverse proxy + `mgtls mcp serve --transport http` mTLS server |
+| **CI/CD Pipeline Templates** | [`cookbooks/cicd/`](cookbooks/cicd) | Reusable GitHub Actions (`github-actions-mgtls.yml`) and GitLab CI (`gitlab-ci-mgtls.yml`) templates |
 
 ---
 
@@ -174,11 +228,11 @@ mgtls ssh config-bundle --name corp-ssh-fleet \
 
 | Example Directory | Key Files | Description |
 | :--- | :--- | :--- |
-| [`examples/fleet/`](file:///home/bill/src/sysadmin/mgtls/examples/fleet) | [`mgtls.yaml`](file:///home/bill/src/sysadmin/mgtls/examples/fleet/mgtls.yaml) | Full declarative multi-tier manifest (Root CA, Intermediate CA, Self-Signed, all 7 platform certs, OpenSSH User/Host CAs & certs, and all 7 target outputs) |
-| [`examples/fastapi-mtls/`](file:///home/bill/src/sysadmin/mgtls/examples/fastapi-mtls) | [`README.md`](file:///home/bill/src/sysadmin/mgtls/examples/fastapi-mtls/README.md), [`server.py`](file:///home/bill/src/sysadmin/mgtls/examples/fastapi-mtls/server.py), [`client.py`](file:///home/bill/src/sysadmin/mgtls/examples/fastapi-mtls/client.py), [`setup_and_test.sh`](file:///home/bill/src/sysadmin/mgtls/examples/fastapi-mtls/setup_and_test.sh) | FastAPI + Uvicorn mTLS server extracting peer X.509 certificate attributes and `httpx` mTLS client |
-| [`examples/springboot-mtls/`](file:///home/bill/src/sysadmin/mgtls/examples/springboot-mtls) | [`README.md`](file:///home/bill/src/sysadmin/mgtls/examples/springboot-mtls/README.md), [`application.yml`](file:///home/bill/src/sysadmin/mgtls/examples/springboot-mtls/application.yml), [`MtlsController.java`](file:///home/bill/src/sysadmin/mgtls/examples/springboot-mtls/MtlsController.java), [`setup_springboot_mtls.sh`](file:///home/bill/src/sysadmin/mgtls/examples/springboot-mtls/setup_springboot_mtls.sh) | Spring Boot 3.2+ native PEM SSL bundles (`client-auth: need`), Spring Security X.509 filter, and mTLS `RestClient` |
-| [`examples/mcp-mtls/`](file:///home/bill/src/sysadmin/mgtls/examples/mcp-mtls) | [`README.md`](file:///home/bill/src/sysadmin/mgtls/examples/mcp-mtls/README.md), [`mcp_server.py`](file:///home/bill/src/sysadmin/mgtls/examples/mcp-mtls/mcp_server.py), [`claude_desktop_config.json`](file:///home/bill/src/sysadmin/mgtls/examples/mcp-mtls/claude_desktop_config.json), [`setup_mcp_mtls.sh`](file:///home/bill/src/sysadmin/mgtls/examples/mcp-mtls/setup_mcp_mtls.sh) | MCP JSON-RPC 2.0 server protected by mTLS and client configuration for both `mgtls mcp serve` (`stdio`) and remote mTLS MCP |
-| [`examples/nginx-mtls/`](file:///home/bill/src/sysadmin/mgtls/examples/nginx-mtls) | [`README.md`](file:///home/bill/src/sysadmin/mgtls/examples/nginx-mtls/README.md), [`nginx.conf`](file:///home/bill/src/sysadmin/mgtls/examples/nginx-mtls/nginx.conf), [`setup_nginx_mtls.sh`](file:///home/bill/src/sysadmin/mgtls/examples/nginx-mtls/setup_nginx_mtls.sh) | NGINX TLS 1.3 reverse proxy with `ssl_verify_client on` and `$ssl_client_s_dn` identity headers |
-| [`examples/vite-mtls/`](file:///home/bill/src/sysadmin/mgtls/examples/vite-mtls) | [`README.md`](file:///home/bill/src/sysadmin/mgtls/examples/vite-mtls/README.md), [`vite.config.ts`](file:///home/bill/src/sysadmin/mgtls/examples/vite-mtls/vite.config.ts), [`setup_vite_mtls.sh`](file:///home/bill/src/sysadmin/mgtls/examples/vite-mtls/setup_vite_mtls.sh) | Vite HTTPS + mTLS dev/preview server with `node:tls` peer certificate inspection middleware |
-| [`examples/proxmox-tls/`](file:///home/bill/src/sysadmin/mgtls/examples/proxmox-tls) | [`README.md`](file:///home/bill/src/sysadmin/mgtls/examples/proxmox-tls/README.md), [`setup_proxmox_tls.sh`](file:///home/bill/src/sysadmin/mgtls/examples/proxmox-tls/setup_proxmox_tls.sh) | Proxmox VE node certificate deployment (`/etc/pve/local/pveproxy-ssl.pem` / `pvenode cert set`) & Let's Encrypt ACME automation |
-| [`examples/openssh-ca/`](file:///home/bill/src/sysadmin/mgtls/examples/openssh-ca) | [`README.md`](file:///home/bill/src/sysadmin/mgtls/examples/openssh-ca/README.md), [`setup_openssh_ca.sh`](file:///home/bill/src/sysadmin/mgtls/examples/openssh-ca/setup_openssh_ca.sh) | End-to-end OpenSSH User CA & Host CA provisioning, key signing, `sshd_config`, `authorized_principals`, and `@cert-authority` `known_hosts` |
+| [`examples/fleet/`](examples/fleet) | [`mgtls.yaml`](examples/fleet/mgtls.yaml) | Full declarative multi-tier manifest (Root CA, Intermediate CA, Self-Signed, all 7 platform certs, OpenSSH User/Host CAs & certs, and all 7 target outputs) |
+| [`examples/fastapi-mtls/`](examples/fastapi-mtls) | [`README.md`](examples/fastapi-mtls/README.md), [`server.py`](examples/fastapi-mtls/server.py), [`client.py`](examples/fastapi-mtls/client.py), [`setup_and_test.sh`](examples/fastapi-mtls/setup_and_test.sh) | FastAPI + Uvicorn mTLS server extracting peer X.509 certificate attributes and `httpx` mTLS client |
+| [`examples/springboot-mtls/`](examples/springboot-mtls) | [`README.md`](examples/springboot-mtls/README.md), [`application.yml`](examples/springboot-mtls/application.yml), [`MtlsController.java`](examples/springboot-mtls/MtlsController.java), [`setup_springboot_mtls.sh`](examples/springboot-mtls/setup_springboot_mtls.sh) | Spring Boot 3.2+ native PEM SSL bundles (`client-auth: need`), Spring Security X.509 filter, and mTLS `RestClient` |
+| [`examples/mcp-mtls/`](examples/mcp-mtls) | [`README.md`](examples/mcp-mtls/README.md), [`mcp_server.py`](examples/mcp-mtls/mcp_server.py), [`claude_desktop_config.json`](examples/mcp-mtls/claude_desktop_config.json), [`setup_mcp_mtls.sh`](examples/mcp-mtls/setup_mcp_mtls.sh) | MCP JSON-RPC 2.0 server protected by mTLS and client configuration for both `mgtls mcp serve` (`stdio`) and remote mTLS MCP |
+| [`examples/nginx-mtls/`](examples/nginx-mtls) | [`README.md`](examples/nginx-mtls/README.md), [`nginx.conf`](examples/nginx-mtls/nginx.conf), [`setup_nginx_mtls.sh`](examples/nginx-mtls/setup_nginx_mtls.sh) | NGINX TLS 1.3 reverse proxy with `ssl_verify_client on` and `$ssl_client_s_dn` identity headers |
+| [`examples/vite-mtls/`](examples/vite-mtls) | [`README.md`](examples/vite-mtls/README.md), [`vite.config.ts`](examples/vite-mtls/vite.config.ts), [`setup_vite_mtls.sh`](examples/vite-mtls/setup_vite_mtls.sh) | Vite HTTPS + mTLS dev/preview server with `node:tls` peer certificate inspection middleware |
+| [`examples/proxmox-tls/`](examples/proxmox-tls) | [`README.md`](examples/proxmox-tls/README.md), [`setup_proxmox_tls.sh`](examples/proxmox-tls/setup_proxmox_tls.sh) | Proxmox VE node certificate deployment (`/etc/pve/local/pveproxy-ssl.pem` / `pvenode cert set`) & Let's Encrypt ACME automation |
+| [`examples/openssh-ca/`](examples/openssh-ca) | [`README.md`](examples/openssh-ca/README.md), [`setup_openssh_ca.sh`](examples/openssh-ca/setup_openssh_ca.sh) | End-to-end OpenSSH User CA & Host CA provisioning, key signing, `sshd_config`, `authorized_principals`, and `@cert-authority` `known_hosts` |

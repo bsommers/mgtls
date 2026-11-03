@@ -1,0 +1,34 @@
+# Reusable GitHub Actions Template for mgtls PKI, mTLS & OpenSSH CA Verification
+# Copy to `.github/workflows/mgtls-pki.yml` when ready to enable remote CI builds.
+name: mgtls Zero-Trust PKI & Target Verification
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify-pki-and-targets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go 1.26
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+
+      - name: Build static zero-CGO mgtls binary
+        run: |
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/mgtls ./src/cmd/mgtls
+          ./bin/mgtls --version
+
+      - name: Run race-enabled unit & integration test suite
+        run: go test -race -v ./src/...
+
+      - name: Reconcile declarative fleet manifest & run doctor gate
+        run: |
+          ./bin/mgtls --store-dir .mgtls-ci apply -f examples/fleet/mgtls.yaml
+          ./bin/mgtls --store-dir .mgtls-ci status
+          ./bin/mgtls --store-dir .mgtls-ci doctor --warn-days 30

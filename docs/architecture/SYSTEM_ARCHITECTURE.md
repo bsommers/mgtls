@@ -18,7 +18,7 @@
 ```mermaid
 flowchart TD
     subgraph Interfaces["User & Agent Interfaces"]
-        CLI["CLI Binary (cmd/mgtls)"]
+        CLI["CLI Binary (src/cmd/mgtls)"]
         MCPClient["AI Agents / MCP Clients (Claude, Cursor, Antigravity)"]
         FleetYAML["Declarative Manifest (mgtls.yaml)"]
     end
@@ -93,7 +93,7 @@ flowchart TD
 | `pkg/targets` | Framework scaffolding (`fastapi`, `springboot`, `mcp`, `nginx`, `vite`, `proxmox`, `openssh`), automated certificate provisioning, and runnable verification scripts. | `pkg/store`, `pkg/pki`, `pkg/sshca` | `text/template`, `path/filepath` |
 | `pkg/profile` | Declarative `mgtls.yaml` / JSON parser, idempotent convergence engine (`Apply`), and store health/expiry diagnostics (`RunDoctor`). | `pkg/store`, `pkg/pki`, `pkg/sshca`, `pkg/acme`, `pkg/targets` | `gopkg.in/yaml.v3`, `encoding/json` |
 | `pkg/mcpserver` | Model Context Protocol (MCP) JSON-RPC 2.0 server (`stdio` and `http`/`https`/mTLS), exposing Tools, Resources, and Prompts. | `pkg/store`, `pkg/pki`, `pkg/sshca`, `pkg/acme`, `pkg/targets`, `pkg/profile` | `encoding/json`, `net/http`, `crypto/tls` |
-| `cmd/mgtls` | CLI entrypoint, subcommand routing, flag parsing, tabular human output, and `--json` structured output. | All `pkg/*` | `flag`, `fmt`, `os` |
+| `src/src/cmd/mgtls` | CLI entrypoint, subcommand routing, flag parsing, tabular human output, and `--json` structured output. | All `pkg/*` | `flag`, `fmt`, `os` |
 
 ---
 
@@ -105,7 +105,7 @@ flowchart TD
 sequenceDiagram
     autonumber
     actor Operator as Operator / MCP Agent
-    participant CLI as cmd/mgtls or pkg/mcpserver
+    participant CLI as src/cmd/mgtls or pkg/mcpserver
     participant Target as pkg/targets
     participant PKI as pkg/pki
     participant Store as pkg/store

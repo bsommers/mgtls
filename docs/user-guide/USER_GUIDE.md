@@ -7,7 +7,7 @@
 `mgtls` compiles as a single static binary with zero CGO dependencies:
 
 ```bash
-CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o mgtls ./cmd/mgtls
+CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o mgtls ./src/src/cmd/mgtls
 sudo install -m 0755 mgtls /usr/local/bin/mgtls
 ```
 
