@@ -528,13 +528,50 @@ func TestPKINegativeAndEdgeCases(t *testing.T) {
 		t.Fatalf("expected wrong CA error in RevokeCert, got %v", err)
 	}
 
-	// 5. GenerateTrustScript negative and default name paths
+	// 5. GenerateTrustScript negative, default name, and shell-metacharacter sanitization paths
 	if _, err := GenerateTrustScript("", "ca"); err == nil {
 		t.Fatalf("expected error for empty caCertPath in GenerateTrustScript")
 	}
 	scriptsDefault, err := GenerateTrustScript(ca1.Record.CertPath, "")
 	if err != nil || !strings.Contains(scriptsDefault["debian"], "mgtls-ca.crt") {
 		t.Fatalf("expected default mgtls-ca name in GenerateTrustScript: %+v, err=%v", scriptsDefault, err)
+	}
+	scriptsUnsafe, err := GenerateTrustScript(ca1.Record.CertPath, "../../evil; rm -rf /")
+	if err != nil || !strings.Contains(scriptsUnsafe["debian"], "/evilrm-rf.crt") {
+		t.Fatalf("expected sanitized anchor name in GenerateTrustScript, got %+v, err=%v", scriptsUnsafe, err)
+	}
+
+	// 6. Multi-cert revocation preserves distinct per-certificate reason codes in CRL
+	cRev1, err := IssueCert(s, CertRequest{Name: "rev-cert-1", CommonName: "rev1.local", CAName: "ca-defaults"})
+	if err != nil {
+		t.Fatalf("IssueCert rev-cert-1: %v", err)
+	}
+	cRev2, err := IssueCert(s, CertRequest{Name: "rev-cert-2", CommonName: "rev2.local", CAName: "ca-defaults"})
+	if err != nil {
+		t.Fatalf("IssueCert rev-cert-2: %v", err)
+	}
+	if _, err := RevokeCert(s, "ca-defaults", cRev1.Record.Name, 1); err != nil {
+		t.Fatalf("RevokeCert rev-cert-1 (reason 1): %v", err)
+	}
+	crlMultiPath, err := RevokeCert(s, "ca-defaults", cRev2.Record.Name, 4)
+	if err != nil {
+		t.Fatalf("RevokeCert rev-cert-2 (reason 4): %v", err)
+	}
+	rec1After, err := s.GetCert("rev-cert-1")
+	if err != nil || rec1After.RevokeReason != 1 {
+		t.Fatalf("expected rev-cert-1 RevokeReason=1, got %+v, err=%v", rec1After, err)
+	}
+	rec2After, err := s.GetCert("rev-cert-2")
+	if err != nil || rec2After.RevokeReason != 4 {
+		t.Fatalf("expected rev-cert-2 RevokeReason=4, got %+v, err=%v", rec2After, err)
+	}
+	crlMultiRaw, err := os.ReadFile(crlMultiPath)
+	if err != nil {
+		t.Fatalf("read multi CRL: %v", err)
+	}
+	parsedCRL, err := parseCRLFromBytes(crlMultiRaw)
+	if err != nil || len(parsedCRL.RevokedCertificateEntries) < 2 {
+		t.Fatalf("parse multi CRL: %+v, err=%v", parsedCRL, err)
 	}
 }
 

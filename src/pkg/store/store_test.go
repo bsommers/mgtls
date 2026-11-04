@@ -225,5 +225,16 @@ func TestStoreDefaultBaseDirGettersUpsertReplaceAndCorruptedManifest(t *testing.
 	if _, err := s.GetSSHCA("sshca1"); err == nil {
 		t.Fatalf("expected GetSSHCA to fail on corrupted manifest")
 	}
+
+	// 5. Test path traversal prevention in SafePath, WriteKey, and WritePublic
+	if _, err := s.SafePath("..", "escape.pem"); err == nil || !strings.Contains(err.Error(), "escapes store root") {
+		t.Fatalf("expected SafePath traversal error, got %v", err)
+	}
+	if _, err := s.WriteKey("../../etc/cron.d/pwn", []byte("secret")); err == nil || !strings.Contains(err.Error(), "escapes store root") {
+		t.Fatalf("expected WriteKey traversal error, got %v", err)
+	}
+	if _, err := s.WritePublic("../outside/cert.pem", []byte("public")); err == nil || !strings.Contains(err.Error(), "escapes store root") {
+		t.Fatalf("expected WritePublic traversal error, got %v", err)
+	}
 }
 

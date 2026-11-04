@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -64,6 +65,7 @@ type CertRecord struct {
 	NotAfter      time.Time `json:"not_after"`
 	Revoked       bool      `json:"revoked"`
 	RevokedAt     time.Time `json:"revoked_at,omitempty"`
+	RevokeReason  int       `json:"revoke_reason,omitempty"`
 	Fingerprint   string    `json:"fingerprint"`
 }
 
@@ -170,9 +172,22 @@ func (s *Store) Path(elem ...string) string {
 	return filepath.Join(parts...)
 }
 
+// SafePath resolves a relative path inside the store and verifies it does not escape BaseDir.
+func (s *Store) SafePath(elem ...string) (string, error) {
+	full := s.Path(elem...)
+	rel, err := filepath.Rel(s.BaseDir, full)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("path %q escapes store root %q", strings.Join(elem, "/"), s.BaseDir)
+	}
+	return full, nil
+}
+
 // WriteKey writes sensitive key material with strict 0600 permissions.
 func (s *Store) WriteKey(relPath string, data []byte) (string, error) {
-	full := s.Path(relPath)
+	full, err := s.SafePath(relPath)
+	if err != nil {
+		return "", err
+	}
 	if err := os.MkdirAll(filepath.Dir(full), 0700); err != nil {
 		return "", fmt.Errorf("mkdir parent for key %s: %w", relPath, err)
 	}
@@ -187,7 +202,10 @@ func (s *Store) WriteKey(relPath string, data []byte) (string, error) {
 
 // WritePublic writes public certificates or configuration files with 0644 permissions.
 func (s *Store) WritePublic(relPath string, data []byte) (string, error) {
-	full := s.Path(relPath)
+	full, err := s.SafePath(relPath)
+	if err != nil {
+		return "", err
+	}
 	if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
 		return "", fmt.Errorf("mkdir parent for public file %s: %w", relPath, err)
 	}

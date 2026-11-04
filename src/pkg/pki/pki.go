@@ -524,6 +524,28 @@ func leafKeyUsage(alg string) x509.KeyUsage {
 	return ku
 }
 
+func writeLeafCertArtifacts(s *store.Store, name string, certPEM, keyPEM, fullChainPEM, caChainPEM, certDER []byte) (certPath, keyPath, fullChainPath, caChainPath, derPath, bundlePath string, err error) {
+	bundlePEM := append(append([]byte{}, fullChainPEM...), keyPEM...)
+	relDir := filepath.Join("certs", name)
+	if certPath, err = s.WritePublic(filepath.Join(relDir, "cert.pem"), certPEM); err != nil {
+		return
+	}
+	if keyPath, err = s.WriteKey(filepath.Join(relDir, "key.pem"), keyPEM); err != nil {
+		return
+	}
+	if fullChainPath, err = s.WritePublic(filepath.Join(relDir, "fullchain.pem"), fullChainPEM); err != nil {
+		return
+	}
+	if caChainPath, err = s.WritePublic(filepath.Join(relDir, "ca-chain.pem"), caChainPEM); err != nil {
+		return
+	}
+	if derPath, err = s.WritePublic(filepath.Join(relDir, "cert.der"), certDER); err != nil {
+		return
+	}
+	bundlePath, err = s.WriteKey(filepath.Join(relDir, "bundle.pem"), bundlePEM)
+	return
+}
+
 func IssueCert(s *store.Store, req CertRequest) (*CertResult, error) {
 	if s == nil {
 		return nil, errors.New("store is nil")
@@ -617,30 +639,9 @@ func IssueCert(s *store.Store, req CertRequest) (*CertResult, error) {
 		Bytes: certDER,
 	})
 	fullChainPEM := append(append([]byte{}, certPEM...), caChainPEM...)
-	bundlePEM := append(append([]byte{}, fullChainPEM...), keyPEM...)
-
-	relDir := filepath.Join("certs", req.Name)
-	certPath, err := s.WritePublic(filepath.Join(relDir, "cert.pem"), certPEM)
-	if err != nil {
-		return nil, err
-	}
-	keyPath, err := s.WriteKey(filepath.Join(relDir, "key.pem"), keyPEM)
-	if err != nil {
-		return nil, err
-	}
-	fullChainPath, err := s.WritePublic(filepath.Join(relDir, "fullchain.pem"), fullChainPEM)
-	if err != nil {
-		return nil, err
-	}
-	caChainPath, err := s.WritePublic(filepath.Join(relDir, "ca-chain.pem"), caChainPEM)
-	if err != nil {
-		return nil, err
-	}
-	derPath, err := s.WritePublic(filepath.Join(relDir, "cert.der"), certDER)
-	if err != nil {
-		return nil, err
-	}
-	bundlePath, err := s.WriteKey(filepath.Join(relDir, "bundle.pem"), bundlePEM)
+	certPath, keyPath, fullChainPath, caChainPath, derPath, bundlePath, err := writeLeafCertArtifacts(
+		s, req.Name, certPEM, keyPEM, fullChainPEM, caChainPEM, certDER,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -751,30 +752,9 @@ func IssueSelfSigned(s *store.Store, req SelfSignedRequest) (*CertResult, error)
 		Type:  "CERTIFICATE",
 		Bytes: certDER,
 	})
-	bundlePEM := append(append([]byte{}, certPEM...), keyPEM...)
-
-	relDir := filepath.Join("certs", req.Name)
-	certPath, err := s.WritePublic(filepath.Join(relDir, "cert.pem"), certPEM)
-	if err != nil {
-		return nil, err
-	}
-	keyPath, err := s.WriteKey(filepath.Join(relDir, "key.pem"), keyPEM)
-	if err != nil {
-		return nil, err
-	}
-	fullChainPath, err := s.WritePublic(filepath.Join(relDir, "fullchain.pem"), certPEM)
-	if err != nil {
-		return nil, err
-	}
-	caChainPath, err := s.WritePublic(filepath.Join(relDir, "ca-chain.pem"), certPEM)
-	if err != nil {
-		return nil, err
-	}
-	derPath, err := s.WritePublic(filepath.Join(relDir, "cert.der"), certDER)
-	if err != nil {
-		return nil, err
-	}
-	bundlePath, err := s.WriteKey(filepath.Join(relDir, "bundle.pem"), bundlePEM)
+	certPath, keyPath, fullChainPath, caChainPath, derPath, bundlePath, err := writeLeafCertArtifacts(
+		s, req.Name, certPEM, keyPEM, certPEM, certPEM, certDER,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1028,6 +1008,7 @@ func RevokeCert(s *store.Store, caName, certName string, reasonCode int) (string
 	now := time.Now().UTC()
 	certRec.Revoked = true
 	certRec.RevokedAt = now
+	certRec.RevokeReason = reasonCode
 	if err := s.UpsertCert(*certRec); err != nil {
 		return "", err
 	}
@@ -1051,11 +1032,10 @@ func RevokeCert(s *store.Store, caName, certName string, reasonCode int) (string
 		if revTime.IsZero() {
 			revTime = now
 		}
-		rc := reasonCode
 		entries = append(entries, x509.RevocationListEntry{
 			SerialNumber:   serial,
 			RevocationTime: revTime,
-			ReasonCode:     rc,
+			ReasonCode:     c.RevokeReason,
 		})
 	}
 
@@ -1083,14 +1063,25 @@ func RevokeCert(s *store.Store, caName, certName string, reasonCode int) (string
 	return crlPath, nil
 }
 
+func sanitizeTrustAnchorName(name string) string {
+	var b strings.Builder
+	for _, r := range strings.TrimSpace(name) {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-' {
+			b.WriteRune(r)
+		}
+	}
+	out := strings.Trim(b.String(), ".")
+	if out == "" {
+		return "mgtls-ca"
+	}
+	return out
+}
+
 func GenerateTrustScript(caCertPath, name string) (map[string]string, error) {
 	if strings.TrimSpace(caCertPath) == "" {
 		return nil, errors.New("caCertPath is required")
 	}
-	safeName := strings.TrimSpace(name)
-	if safeName == "" {
-		safeName = "mgtls-ca"
-	}
+	safeName := sanitizeTrustAnchorName(name)
 
 	scripts := map[string]string{
 		"debian": fmt.Sprintf(
