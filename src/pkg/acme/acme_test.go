@@ -181,6 +181,26 @@ func TestObtainCertificateAllChallengesAndEAB(t *testing.T) {
 	if len(dueAll) != 3 {
 		t.Fatalf("expected 3 certs due within 120 days, got %d", len(dueAll))
 	}
+
+	// 5. Re-use existing account key on second ObtainCertificate with same Name
+	if _, err := ObtainCertificate(ctx, st, ObtainRequest{
+		Name:          "web-http01",
+		Provider:      "buypass",
+		DirectoryURL:  mock.DirectoryURL(),
+		Email:         "ops@example.com",
+		Domains:       []string{"renewed.example.com"},
+		ChallengeType: "dns-01",
+	}); err != nil {
+		t.Fatalf("ObtainCertificate account key reuse: %v", err)
+	}
+
+	// 6. Negative error cases (missing domains, unsupported challenge, missing EAB on Google)
+	if _, err := ObtainCertificate(ctx, st, ObtainRequest{Name: "no-domains", Provider: "custom", DirectoryURL: mock.DirectoryURL()}); err == nil {
+		t.Fatalf("expected error for empty domains")
+	}
+	if _, err := ObtainCertificate(ctx, st, ObtainRequest{Name: "bad-chall", Provider: "custom", DirectoryURL: mock.DirectoryURL(), Domains: []string{"a.com"}, ChallengeType: "bad-01"}); err == nil {
+		t.Fatalf("expected error for unsupported challenge type")
+	}
 }
 
 func verifyIssuedCert(t *testing.T, certPath string, caCert *x509.Certificate, expectedDNS string) {

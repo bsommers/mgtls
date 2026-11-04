@@ -12,10 +12,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/sysadmin/mgtls/src/pkg/acme"
 	"github.com/sysadmin/mgtls/src/pkg/pki"
 	"github.com/sysadmin/mgtls/src/pkg/store"
 )
@@ -457,3 +459,154 @@ func TestServeHTTPAndMutualTLS(t *testing.T) {
 		t.Fatalf("ServeHTTP shutdown returned error: %v", err)
 	}
 }
+
+func TestMCPToolsAndJSONRPCNegativePaths(t *testing.T) {
+	tmpDir := t.TempDir()
+	st, err := store.New(filepath.Join(tmpDir, "store"))
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	srv := NewServer(st)
+
+	// 1. profile_apply via manifest_content
+	inlineYAML := `version: "1.0"
+cas:
+  - name: inline-ca
+    common_name: Inline Root CA
+`
+	applyInlineOut := callToolJSON(t, srv, "profile_apply", map[string]any{
+		"manifest_content": inlineYAML,
+	})
+	if cas, _ := applyInlineOut["cas_created"].([]any); len(cas) != 1 {
+		t.Fatalf("expected 1 CA created via manifest_content, got %v", applyInlineOut)
+	}
+
+	// 2. profile_apply via manifest_path
+	manifestPath := filepath.Join(tmpDir, "fleet.yaml")
+	fileYAML := `version: "1.0"
+certs:
+  - name: file-cert
+    ca_name: inline-ca
+    common_name: file.internal
+`
+	if err := os.WriteFile(manifestPath, []byte(fileYAML), 0644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	applyFileOut := callToolJSON(t, srv, "profile_apply", map[string]any{
+		"manifest_path": manifestPath,
+	})
+	if certs, _ := applyFileOut["certs_issued"].([]any); len(certs) != 1 {
+		t.Fatalf("expected 1 cert issued via manifest_path, got %v", applyFileOut)
+	}
+
+	// 3. store_doctor tool
+	docOut := callToolJSON(t, srv, "store_doctor", map[string]any{
+		"warn_days": 30,
+	})
+	if docOut["healthy"] != true {
+		t.Fatalf("expected store_doctor healthy=true, got %+v", docOut)
+	}
+
+	// 4. acme_obtain tool against MockACMEServer
+	mockACME := acme.NewMockACMEServer()
+	defer mockACME.Close()
+	acmeRes := callToolJSON(t, srv, "acme_obtain", map[string]any{
+		"name":             "mcp-acme-cert",
+		"provider":         "custom",
+		"directory_url":    mockACME.DirectoryURL(),
+		"email":            "mcp@internal",
+		"domains":          []string{"mcp.internal"},
+		"challenge_type":   "dns-01",
+		"skip_verify_tls":  true,
+	})
+	if rec, _ := acmeRes["record"].(map[string]any); rec["name"] != "mcp-acme-cert" {
+		t.Fatalf("unexpected acme_obtain result: %+v", acmeRes)
+	}
+
+	// 5. pki_inspect on CA name
+	inspCA := callToolJSON(t, srv, "pki_inspect", map[string]any{
+		"cert_name": "inline-ca",
+	})
+	if inspCA["is_ca"] != true {
+		t.Fatalf("expected is_ca=true for inline-ca, got %+v", inspCA)
+	}
+
+	// 6. Prompts with default arguments (empty map)
+	for _, pName := range []string{"setup-mtls-service", "setup-ssh-ca", "setup-proxmox-tls"} {
+		pRes := callRPC(t, srv, "prompts/get", map[string]any{
+			"name":      pName,
+			"arguments": map[string]string{},
+		})
+		if msgs, _ := pRes["messages"].([]any); len(msgs) == 0 {
+			t.Fatalf("expected non-empty messages for prompt %s with empty args", pName)
+		}
+	}
+
+	// 7. JSON-RPC negative / error code checks
+	checkRPCError := func(raw string, wantCode int) {
+		t.Helper()
+		respBytes, err := srv.HandleJSONRPC(context.Background(), []byte(raw))
+		if err != nil {
+			t.Fatalf("HandleJSONRPC error: %v", err)
+		}
+		var r struct {
+			Error *jsonRPCError `json:"error"`
+		}
+		if err := json.Unmarshal(respBytes, &r); err != nil {
+			t.Fatalf("unmarshal error response: %v", err)
+		}
+		if r.Error == nil || r.Error.Code != wantCode {
+			t.Fatalf("for input %s: expected error code %d, got %+v", raw, wantCode, r.Error)
+		}
+	}
+
+	checkRPCError(`{bad json`, -32700)
+	checkRPCError(`{"jsonrpc":"","method":""}`, -32600)
+	checkRPCError(`{"jsonrpc":"2.0","id":1,"method":"unknown/method"}`, -32601)
+	checkRPCError(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":"not-an-object"}`, -32602)
+	checkRPCError(`{"jsonrpc":"2.0","id":1,"method":"resources/read","params":{}}`, -32602)
+	checkRPCError(`{"jsonrpc":"2.0","id":1,"method":"resources/read","params":{"uri":"mgtls://unknown/resource"}}`, -32602)
+	checkRPCError(`{"jsonrpc":"2.0","id":1,"method":"prompts/get","params":{}}`, -32602)
+	checkRPCError(`{"jsonrpc":"2.0","id":1,"method":"prompts/get","params":{"name":"unknown-prompt"}}`, -32602)
+
+	// 8. Unknown tool name & invalid tool parameters return isError: true
+	for _, tc := range []struct {
+		name string
+		args any
+	}{
+		{"nonexistent_tool", map[string]any{}},
+		{"profile_apply", map[string]any{}},
+		{"pki_inspect", map[string]any{}},
+		{"pki_inspect", map[string]any{"cert_name": "does-not-exist"}},
+	} {
+		res := callRPC(t, srv, "tools/call", map[string]any{
+			"name":      tc.name,
+			"arguments": tc.args,
+		})
+		if isErr, _ := res["isError"].(bool); !isErr {
+			t.Errorf("expected isError=true for tool %s (%v), got %+v", tc.name, tc.args, res)
+		}
+	}
+
+	// 9. HTTP handler edge cases (GET /mcp, PUT /mcp 405, POST notification 202)
+	handler := srv.NewHTTPHandler()
+
+	recGet := httptest.NewRecorder()
+	handler.ServeHTTP(recGet, httptest.NewRequest(http.MethodGet, "/mcp", nil))
+	if recGet.Code != http.StatusOK || !strings.Contains(recGet.Body.String(), "ready") {
+		t.Errorf("expected 200 ready on GET /mcp, got %d: %s", recGet.Code, recGet.Body.String())
+	}
+
+	recPut := httptest.NewRecorder()
+	handler.ServeHTTP(recPut, httptest.NewRequest(http.MethodPut, "/mcp", nil))
+	if recPut.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405 on PUT /mcp, got %d", recPut.Code)
+	}
+
+	recNotif := httptest.NewRecorder()
+	handler.ServeHTTP(recNotif, httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","method":"notifications/initialized"}`)))
+	if recNotif.Code != http.StatusAccepted {
+		t.Errorf("expected 202 Accepted for notification over HTTP, got %d", recNotif.Code)
+	}
+}
+

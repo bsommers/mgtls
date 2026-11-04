@@ -6,9 +6,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/sysadmin/mgtls/src/pkg/acme"
 	"github.com/sysadmin/mgtls/src/pkg/pki"
 	"github.com/sysadmin/mgtls/src/pkg/store"
+	"github.com/sysadmin/mgtls/src/pkg/targets"
 )
 
 const testFleetYAML = `
@@ -399,3 +402,265 @@ func TestRunDoctor(t *testing.T) {
 		t.Errorf("expected warning finding for short-lived-cert, got: %+v", docExp.Findings)
 	}
 }
+
+func TestFleetSpecEdgeCasesAndACME(t *testing.T) {
+	if _, err := LoadFleetSpec("   "); err == nil {
+		t.Errorf("expected error for empty path")
+	}
+	if _, err := LoadFleetSpec("/nonexistent/path/fleet.yaml"); err == nil {
+		t.Errorf("expected error for missing file")
+	}
+	if _, err := ParseFleetSpec([]byte("   \n\t  ")); err == nil {
+		t.Errorf("expected error for empty spec")
+	}
+	if _, err := ParseFleetSpec([]byte("{invalid-json")); err == nil {
+		t.Errorf("expected error for invalid JSON")
+	}
+	if _, err := ParseFleetSpec([]byte("# only comment\n---\n...\n")); err == nil {
+		t.Errorf("expected error for YAML with no content")
+	}
+	if _, err := ParseFleetSpec([]byte("invalid_line_without_colon")); err == nil {
+		t.Errorf("expected error for invalid YAML map line")
+	}
+	if _, err := Apply(context.Background(), nil, nil); err == nil {
+		t.Errorf("expected error for nil spec in Apply")
+	}
+
+	// Parse JSON FleetSpec
+	jsonSpec := `{
+		"version": "1.0",
+		"cas": [{"name": "json-ca", "common_name": "JSON Root CA"}]
+	}`
+	parsedJSON, err := ParseFleetSpec([]byte(jsonSpec))
+	if err != nil || len(parsedJSON.CAs) != 1 || parsedJSON.CAs[0].Name != "json-ca" {
+		t.Fatalf("ParseFleetSpec(JSON) failed: %v, %+v", err, parsedJSON)
+	}
+
+	// Parse YAML with flow arrays, flow maps, single-quoted strings, comments, booleans, numbers, tabs, bare sequence items
+	mockACME := acme.NewMockACMEServer()
+	defer mockACME.Close()
+
+	tmpDir := t.TempDir()
+	storeDir := filepath.Join(tmpDir, "acme-store")
+	flowYAML := `---
+# Fleet configuration with flow syntax
+version: '1.0' # inline comment
+store_dir: "` + filepath.ToSlash(storeDir) + `"
+cas:
+  -
+    name: 'flow-ca'
+    common_name: "Flow CA #1"
+    organization: 'Org''s Unit'
+    valid_days: 3650
+certs:
+  - name: flow-srv
+    ca_name: flow-ca
+    common_name: api.local
+    dns_names: [api.local, 'localhost', "sub.api.local"]
+    ip_addresses: []
+    uris: [ ]
+ssh_cas:
+  - name: flow-ssh-ca
+    ca_type: user
+ssh_certs:
+  - name: flow-ssh-cert
+    ca_name: flow-ssh-ca
+    cert_type: user
+    key_id: alice
+    principals: [alice, 'admin']
+    valid_hours: 24
+ssh_configs:
+  - name: ""
+    user_ca_name: flow-ssh-ca
+    user_cert_name: flow-ssh-cert
+    host_patterns: ['*.local']
+    principals: [alice, admin]
+acme_certs:
+  - name: acme-web
+    provider: custom
+    directory_url: "` + mockACME.DirectoryURL() + `"
+    email: "ops@local"
+    domains: [edge.local, 'www.edge.local']
+    challenge_type: dns-01
+    skip_verify_tls: TRUE
+targets:
+  - name: tgt-acme-nginx
+    target_type: nginx
+    mutual_tls: FALSE
+    ca_name: flow-ca
+    server_cert: acme-web
+    extra: {upstream_url: 'http://127.0.0.1:9090', mode: "production"}
+...
+`
+	spec, err := ParseFleetSpec([]byte(flowYAML))
+	if err != nil {
+		t.Fatalf("ParseFleetSpec(flowYAML) failed: %v", err)
+	}
+	if len(spec.Certs) != 1 || len(spec.Certs[0].DNSNames) != 3 {
+		t.Fatalf("expected 3 flow dns_names, got %+v", spec.Certs)
+	}
+	if len(spec.SSHCerts) != 1 || len(spec.SSHCerts[0].Principals) != 2 {
+		t.Fatalf("expected 2 flow principals, got %+v", spec.SSHCerts)
+	}
+
+	// Exercise scalar/flow helpers directly for edge cases (~ / null / {} / { })
+	if parseYAMLScalarOrFlow("~") != nil || parseYAMLScalarOrFlow("null") != nil {
+		t.Errorf("expected nil for ~ and null")
+	}
+	if m, ok := parseYAMLScalarOrFlow("{}").(map[string]any); !ok || len(m) != 0 {
+		t.Errorf("expected empty map for {}")
+	}
+	if m, ok := parseYAMLScalarOrFlow("{ }").(map[string]any); !ok || len(m) != 0 {
+		t.Errorf("expected empty map for { }")
+	}
+	parts := splitTopLevelComma(`"a,b", 'c,d', "\"e,f\"", plain`)
+	if len(parts) != 4 {
+		t.Errorf("expected 4 parts from splitTopLevelComma, got %v", parts)
+	}
+
+	// Apply with s == nil (uses spec.StoreDir), ACMECerts, SSHConfigs default name, and findACMECert target resolution
+	rep, err := Apply(context.Background(), nil, spec)
+	if err != nil {
+		t.Fatalf("Apply(flowYAML) failed: %v", err)
+	}
+	if len(rep.ACMECertsObtained) != 1 || rep.ACMECertsObtained[0] != "acme-web" {
+		t.Errorf("expected acme-web obtained, got %v", rep.ACMECertsObtained)
+	}
+	if len(rep.SSHConfigsBuilt) != 1 || rep.SSHConfigsBuilt[0] != "default" {
+		t.Errorf("expected default SSH config built, got %v", rep.SSHConfigsBuilt)
+	}
+	if len(rep.TargetsGenerated) != 1 || rep.TargetsGenerated[0] != "tgt-acme-nginx" {
+		t.Errorf("expected tgt-acme-nginx generated, got %v", rep.TargetsGenerated)
+	}
+
+	// Verify resolveTargetPaths error cases
+	s, err := store.New(storeDir)
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	if _, err := resolveTargetPaths(s, targets.GenerateRequest{CAName: "missing-ca"}); err == nil {
+		t.Errorf("expected error for missing CA in resolveTargetPaths")
+	}
+	if _, err := resolveTargetPaths(s, targets.GenerateRequest{ServerCert: "missing-srv"}); err == nil {
+		t.Errorf("expected error for missing ServerCert in resolveTargetPaths")
+	}
+	if _, err := resolveTargetPaths(s, targets.GenerateRequest{ClientCert: "missing-cli"}); err == nil {
+		t.Errorf("expected error for missing ClientCert in resolveTargetPaths")
+	}
+}
+
+func TestRunDoctorComprehensiveStates(t *testing.T) {
+	if _, err := RunDoctor(nil, 30); err == nil {
+		t.Errorf("expected error for nil store in RunDoctor")
+	}
+
+	tmpDir := t.TempDir()
+	s, err := store.New(filepath.Join(tmpDir, "doc-store"))
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	if err := s.Init(); err != nil {
+		t.Fatalf("s.Init: %v", err)
+	}
+
+	caRes, err := pki.CreateCA(s, pki.CARequest{Name: "doc-ca", CommonName: "Doc CA"})
+	if err != nil {
+		t.Fatalf("CreateCA: %v", err)
+	}
+	revCert, err := pki.IssueCert(s, pki.CertRequest{Name: "revoked-cert", CAName: "doc-ca", CommonName: "rev.local"})
+	if err != nil {
+		t.Fatalf("IssueCert: %v", err)
+	}
+	if _, err := pki.RevokeCert(s, "doc-ca", revCert.Record.Name, 1); err != nil {
+		t.Fatalf("RevokeCert: %v", err)
+	}
+
+	now := time.Now().UTC()
+	// Add synthetic expired/expiring/missing records to manifest to exercise all branches of RunDoctor
+	dummyPub := filepath.Join(tmpDir, "dummy.pub")
+	dummyKey := filepath.Join(tmpDir, "dummy.key")
+	_ = os.WriteFile(dummyPub, []byte("PUB"), 0644)
+	_ = os.WriteFile(dummyKey, []byte("KEY"), 0600)
+
+	_ = s.UpsertCA(store.CARecord{
+		Name:     "expired-ca",
+		CertPath: dummyPub,
+		KeyPath:  dummyKey,
+		NotAfter: now.Add(-24 * time.Hour),
+	})
+	_ = s.UpsertCA(store.CARecord{
+		Name:     "soon-ca",
+		CertPath: "/nonexistent/ca.crt",
+		KeyPath:  "/nonexistent/ca.key",
+		NotAfter: now.Add(5 * 24 * time.Hour),
+	})
+	_ = s.UpsertCert(store.CertRecord{
+		Name:     "expired-cert",
+		CertPath: dummyPub,
+		KeyPath:  dummyKey,
+		NotAfter: now.Add(-24 * time.Hour),
+	})
+	_ = s.UpsertSSHCert(store.SSHCertRecord{
+		Name:        "expired-ssh",
+		CertPath:    dummyPub,
+		PrivKeyPath: dummyKey,
+		ValidBefore: now.Add(-1 * time.Hour),
+	})
+	_ = s.UpsertSSHCert(store.SSHCertRecord{
+		Name:        "soon-ssh",
+		CertPath:    dummyPub,
+		PrivKeyPath: dummyKey,
+		ValidBefore: now.Add(24 * time.Hour),
+	})
+	_ = s.UpsertACME(store.ACMERecord{
+		Name:       "valid-acme",
+		CertPath:   dummyPub,
+		KeyPath:    dummyKey,
+		AccountKey: dummyKey,
+		NotAfter:   now.Add(60 * 24 * time.Hour),
+	})
+	_ = s.UpsertACME(store.ACMERecord{
+		Name:     "soon-acme",
+		CertPath: dummyPub,
+		KeyPath:  dummyKey,
+		NotAfter: now.Add(5 * 24 * time.Hour),
+	})
+	_ = s.UpsertACME(store.ACMERecord{
+		Name:     "expired-acme",
+		CertPath: dummyPub,
+		KeyPath:  dummyKey,
+		NotAfter: now.Add(-24 * time.Hour),
+	})
+	_ = caRes
+
+	doc, err := RunDoctor(s, 0) // warnDays <= 0 defaults to 30
+	if err != nil {
+		t.Fatalf("RunDoctor failed: %v", err)
+	}
+	if doc.Healthy {
+		t.Errorf("expected Healthy=false for store with expired/revoked/missing artifacts")
+	}
+
+	wantNames := map[string]bool{
+		"revoked-cert": false,
+		"expired-ca":   false,
+		"soon-ca":      false,
+		"expired-cert": false,
+		"expired-ssh":  false,
+		"soon-ssh":     false,
+		"valid-acme":   false,
+		"soon-acme":    false,
+		"expired-acme": false,
+	}
+	for _, f := range doc.Findings {
+		if _, ok := wantNames[f.Name]; ok {
+			wantNames[f.Name] = true
+		}
+	}
+	for name, seen := range wantNames {
+		if !seen {
+			t.Errorf("expected doctor finding for %q, got findings: %+v", name, doc.Findings)
+		}
+	}
+}
+

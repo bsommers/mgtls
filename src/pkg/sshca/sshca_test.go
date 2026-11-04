@@ -301,4 +301,35 @@ func TestSSHCALifecycleAndCertVerification(t *testing.T) {
 			t.Fatalf("ssh_client_config missing directive %q:\n%s", directive, string(clientConfBytes))
 		}
 	}
+
+	// 8. Negative & Edge Cases (Error paths, RSA-4096 cert signing, default OutputDir)
+	if _, err := CreateSSHCA(st, SSHCARequest{Name: "bad-type", CAType: "invalid"}); err == nil {
+		t.Fatalf("expected error for invalid CAType")
+	}
+	if _, err := CreateSSHCA(st, SSHCARequest{Name: "bad-algo", CAType: "user", Algorithm: "dsa-1024"}); err == nil {
+		t.Fatalf("expected error for unsupported algorithm")
+	}
+	if _, err := SignSSHCert(st, SignSSHRequest{Name: "missing-ca", CAName: "no-such-ca", Principals: []string{"alice"}}); err == nil {
+		t.Fatalf("expected error for missing CA")
+	}
+	if _, err := SignSSHCert(st, SignSSHRequest{Name: "bad-pub", CAName: "prod-user-ca", Principals: []string{"alice"}, ExistingPubKey: "/nonexistent/key.pub"}); err == nil {
+		t.Fatalf("expected error for nonexistent ExistingPubKey")
+	}
+	// Sign using RSA-4096 CA and ecdsa-p256 leaf key
+	if _, err := SignSSHCert(st, SignSSHRequest{
+		Name:       "ecdsa-leaf",
+		CAName:     "legacy-rsa-ca",
+		Algorithm:  "ecdsa-p256",
+		Principals: []string{"ops"},
+	}); err != nil {
+		t.Fatalf("SignSSHCert ecdsa-p256 leaf with RSA CA failed: %v", err)
+	}
+	// Inspect plain public key (not a certificate) -> error
+	if _, err := InspectSSHCert(existingPubFile); err == nil {
+		t.Fatalf("expected error when inspecting plain public key as SSH certificate")
+	}
+	// GenerateSSHConfigBundle with default OutputDir
+	if _, err := GenerateSSHConfigBundle(st, SSHConfigRequest{Name: "default-dir-bundle", UserCAName: "prod-user-ca"}); err != nil {
+		t.Fatalf("GenerateSSHConfigBundle default dir: %v", err)
+	}
 }

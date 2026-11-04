@@ -3,10 +3,12 @@ package pki
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -15,7 +17,7 @@ import (
 )
 
 func TestCreateCAAndIssueCertsAcrossAlgorithms(t *testing.T) {
-	algs := []string{"ed25519", "ecdsa-p256", "rsa-2048"}
+	algs := []string{"ed25519", "ecdsa-p256", "ecdsa-p384", "rsa-2048", "rsa-4096"}
 
 	for _, alg := range algs {
 		alg := alg
@@ -80,6 +82,22 @@ func TestCreateCAAndIssueCertsAcrossAlgorithms(t *testing.T) {
 			})
 			if err != nil {
 				t.Fatalf("IssueCert client (%s): %v", alg, err)
+			}
+
+			ssRes, err := IssueSelfSigned(s, SelfSignedRequest{
+				Name:        "ss-" + alg,
+				CommonName:  "127.0.0.1",
+				Role:        "mtls",
+				Algorithm:   alg,
+				DNSNames:    []string{"localhost"},
+				IPAddresses: []string{"127.0.0.1"},
+				URIs:        []string{"spiffe://internal/ss/" + alg},
+			})
+			if err != nil {
+				t.Fatalf("IssueSelfSigned (%s): %v", alg, err)
+			}
+			if !ssRes.Record.SelfSigned || ssRes.Record.Algorithm != alg {
+				t.Fatalf("unexpected SelfSigned record (%s): %+v", alg, ssRes.Record)
 			}
 
 			// Verify server chain against root CA cert (fullchain includes intermediate)
@@ -319,3 +337,204 @@ func TestSelfSignedInspectRevokeAndTrustScripts(t *testing.T) {
 		}
 	}
 }
+
+func TestPKINegativeAndEdgeCases(t *testing.T) {
+	tmpDir := t.TempDir()
+	s, err := store.New(tmpDir)
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+
+	// 1. CreateCA negative & default paths
+	if _, err := CreateCA(nil, CARequest{Name: "ca"}); err == nil {
+		t.Fatalf("expected error for nil store in CreateCA")
+	}
+	if _, err := CreateCA(s, CARequest{Name: "   "}); err == nil {
+		t.Fatalf("expected error for empty CA name")
+	}
+	if _, err := CreateCA(s, CARequest{Name: "bad-alg-ca", Algorithm: "dsa-1024"}); err == nil {
+		t.Fatalf("expected error for unsupported algorithm in CreateCA")
+	}
+	if _, err := CreateCA(s, CARequest{Name: "orphan-inter", ParentCA: "nonexistent-parent"}); err == nil {
+		t.Fatalf("expected error for nonexistent ParentCA")
+	}
+
+	// Root CA with empty CommonName and default algorithm/validDays
+	ca1, err := CreateCA(s, CARequest{Name: "ca-defaults"})
+	if err != nil || ca1.Record.CommonName != "ca-defaults" || ca1.Record.Algorithm != "ed25519" {
+		t.Fatalf("CreateCA defaults failed: %+v, err=%v", ca1, err)
+	}
+	ca2, err := CreateCA(s, CARequest{Name: "ca-other", Algorithm: "p384"})
+	if err != nil || ca2.Record.Algorithm != "ecdsa-p384" {
+		t.Fatalf("CreateCA p384 shorthand failed: %+v, err=%v", ca2, err)
+	}
+
+	// 2. IssueCert & IssueSelfSigned negative and SAN edge cases
+	if _, err := IssueCert(nil, CertRequest{Name: "c", CAName: "ca-defaults"}); err == nil {
+		t.Fatalf("expected error for nil store in IssueCert")
+	}
+	if _, err := IssueCert(s, CertRequest{Name: "", CAName: "ca-defaults"}); err == nil {
+		t.Fatalf("expected error for empty cert name in IssueCert")
+	}
+	if _, err := IssueCert(s, CertRequest{Name: "c", CAName: ""}); err == nil {
+		t.Fatalf("expected error for empty CAName in IssueCert")
+	}
+	if _, err := IssueCert(s, CertRequest{Name: "c", CAName: "missing-ca"}); err == nil {
+		t.Fatalf("expected error for missing CA in IssueCert")
+	}
+	if _, err := IssueCert(s, CertRequest{Name: "c", CAName: "ca-defaults", Role: "invalid-role"}); err == nil {
+		t.Fatalf("expected error for invalid role in IssueCert")
+	}
+	if _, err := IssueCert(s, CertRequest{Name: "c", CAName: "ca-defaults", Algorithm: "unknown-alg"}); err == nil {
+		t.Fatalf("expected error for unsupported algorithm in IssueCert")
+	}
+	if _, err := IssueCert(s, CertRequest{Name: "c", CAName: "ca-defaults", IPAddresses: []string{"999.999.999.999"}}); err == nil {
+		t.Fatalf("expected error for invalid IP in IssueCert")
+	}
+	if _, err := IssueCert(s, CertRequest{Name: "c", CAName: "ca-defaults", URIs: []string{"not-a-uri-without-scheme"}}); err == nil {
+		t.Fatalf("expected error for invalid URI without scheme in IssueCert")
+	}
+
+	// IssueCert with IP as CommonName, URIs, Emails, empty CommonName fallback
+	ipCertRes, err := IssueCert(s, CertRequest{
+		Name:        "ip-cn-cert",
+		CommonName:  "10.20.30.40",
+		CAName:      "ca-defaults",
+		Role:        "client",
+		Algorithm:   "p256",
+		IPAddresses: []string{"", "10.20.30.40", "192.168.1.1"},
+		URIs:        []string{"", "spiffe://cluster.local/ns/prod/sa/app", "https://app.internal/id"},
+		Emails:      []string{"sec@app.internal"},
+	})
+	if err != nil {
+		t.Fatalf("IssueCert with IP CN and SANs: %v", err)
+	}
+	if len(ipCertRes.Record.IPAddresses) != 2 || len(ipCertRes.Record.URIs) != 2 {
+		t.Fatalf("unexpected SAN counts on ip-cn-cert: %+v", ipCertRes.Record)
+	}
+
+	// IssueSelfSigned negative paths
+	if _, err := IssueSelfSigned(nil, SelfSignedRequest{Name: "ss"}); err == nil {
+		t.Fatalf("expected error for nil store in IssueSelfSigned")
+	}
+	if _, err := IssueSelfSigned(s, SelfSignedRequest{Name: ""}); err == nil {
+		t.Fatalf("expected error for empty name in IssueSelfSigned")
+	}
+	if _, err := IssueSelfSigned(s, SelfSignedRequest{Name: "ss", Role: "badrole"}); err == nil {
+		t.Fatalf("expected error for invalid role in IssueSelfSigned")
+	}
+	if _, err := IssueSelfSigned(s, SelfSignedRequest{Name: "ss", Algorithm: "badalg"}); err == nil {
+		t.Fatalf("expected error for invalid algorithm in IssueSelfSigned")
+	}
+	if _, err := IssueSelfSigned(s, SelfSignedRequest{Name: "ss", IPAddresses: []string{"bad-ip"}}); err == nil {
+		t.Fatalf("expected error for invalid IP in IssueSelfSigned")
+	}
+	if _, err := IssueSelfSigned(s, SelfSignedRequest{Name: "ss", URIs: []string{"bad-uri"}}); err == nil {
+		t.Fatalf("expected error for invalid URI in IssueSelfSigned")
+	}
+
+	// 3. VerifyChain negative paths: role mismatches, wrong DNS name, untrusted CA, DER CRL
+	srvOnlyRes, err := IssueCert(s, CertRequest{
+		Name:       "srv-only",
+		CommonName: "srv-only.internal",
+		CAName:     "ca-defaults",
+		Role:       "server",
+	})
+	if err != nil {
+		t.Fatalf("IssueCert srv-only: %v", err)
+	}
+
+	// Client-only cert verified as "server" and "mtls"
+	vCliAsSrv, err := VerifyChain(ipCertRes.Record.CertPath, ca1.Record.CertPath, "", "", "server")
+	if err != nil || vCliAsSrv.Valid {
+		t.Fatalf("expected client-only cert to fail server role verification: %+v, err=%v", vCliAsSrv, err)
+	}
+	vCliAsMTLS, err := VerifyChain(ipCertRes.Record.CertPath, ca1.Record.CertPath, "", "", "mtls")
+	if err != nil || vCliAsMTLS.Valid {
+		t.Fatalf("expected client-only cert to fail mtls role verification: %+v, err=%v", vCliAsMTLS, err)
+	}
+
+	// Server-only cert verified as "mtls" and with empty role ""
+	vSrvAsMTLS, err := VerifyChain(srvOnlyRes.Record.CertPath, ca1.Record.CertPath, "", "srv-only.internal", "mtls")
+	if err != nil || vSrvAsMTLS.Valid {
+		t.Fatalf("expected server-only cert to fail mtls role verification: %+v, err=%v", vSrvAsMTLS, err)
+	}
+	vSrvAnyRole, err := VerifyChain(srvOnlyRes.Record.CertPath, ca1.Record.CertPath, "", "srv-only.internal", "")
+	if err != nil || !vSrvAnyRole.Valid {
+		t.Fatalf("expected server-only cert to succeed with empty role: %+v, err=%v", vSrvAnyRole, err)
+	}
+
+	// Wrong DNS name failure
+	vWrongDNS, err := VerifyChain(srvOnlyRes.Record.CertPath, ca1.Record.CertPath, "", "wrong.example.com", "server")
+	if err != nil || vWrongDNS.Valid {
+		t.Fatalf("expected VerifyChain to fail on wrong DNS name: %+v, err=%v", vWrongDNS, err)
+	}
+
+	// Untrusted CA failure (signed by ca1, verified against ca2)
+	vUntrusted, err := VerifyChain(srvOnlyRes.Record.CertPath, ca2.Record.CertPath, "", "srv-only.internal", "server")
+	if err != nil || vUntrusted.Valid {
+		t.Fatalf("expected VerifyChain to fail against untrusted CA: %+v, err=%v", vUntrusted, err)
+	}
+
+	// System root pool fallback (caBundlePath == "")
+	vSysPool, err := VerifyChain(srvOnlyRes.Record.CertPath, "", "", "srv-only.internal", "server")
+	if err != nil || vSysPool.Valid {
+		t.Fatalf("expected private CA cert to fail against system cert pool: %+v, err=%v", vSysPool, err)
+	}
+
+	// Unsupported role error in VerifyChain
+	if _, err := VerifyChain(srvOnlyRes.Record.CertPath, ca1.Record.CertPath, "", "", "invalid-role"); err == nil {
+		t.Fatalf("expected error for unsupported role in VerifyChain")
+	}
+
+	// DER CRL fallback in VerifyChain
+	crlPEMBytes, err := os.ReadFile(ca1.Record.CRLPath)
+	if err != nil {
+		t.Fatalf("read CRL PEM: %v", err)
+	}
+	crlBlock, _ := pem.Decode(crlPEMBytes)
+	derCRLPath := filepath.Join(tmpDir, "crl.der")
+	if err := os.WriteFile(derCRLPath, crlBlock.Bytes, 0644); err != nil {
+		t.Fatalf("write DER CRL: %v", err)
+	}
+	vDERCRL, err := VerifyChain(srvOnlyRes.Record.CertPath, ca1.Record.CertPath, derCRLPath, "srv-only.internal", "server")
+	if err != nil || !vDERCRL.Valid {
+		t.Fatalf("expected VerifyChain with DER CRL to succeed: %+v, err=%v", vDERCRL, err)
+	}
+
+	// InspectCert error paths
+	if _, err := InspectCert(filepath.Join(tmpDir, "missing.pem")); err == nil {
+		t.Fatalf("expected error for missing cert in InspectCert")
+	}
+	badCertPath := filepath.Join(tmpDir, "garbage.pem")
+	if err := os.WriteFile(badCertPath, []byte("not-a-cert"), 0644); err != nil {
+		t.Fatalf("write garbage cert: %v", err)
+	}
+	if _, err := InspectCert(badCertPath); err == nil {
+		t.Fatalf("expected error for invalid cert bytes in InspectCert")
+	}
+
+	// 4. RevokeCert negative paths
+	if _, err := RevokeCert(nil, "ca-defaults", "srv-only", 0); err == nil {
+		t.Fatalf("expected error for nil store in RevokeCert")
+	}
+	if _, err := RevokeCert(s, "nonexistent-ca", "srv-only", 0); err == nil {
+		t.Fatalf("expected error for nonexistent CA in RevokeCert")
+	}
+	if _, err := RevokeCert(s, "ca-defaults", "nonexistent-cert", 0); err == nil {
+		t.Fatalf("expected error for nonexistent cert in RevokeCert")
+	}
+	if _, err := RevokeCert(s, "ca-other", "srv-only", 0); err == nil || !strings.Contains(err.Error(), "was issued by") {
+		t.Fatalf("expected wrong CA error in RevokeCert, got %v", err)
+	}
+
+	// 5. GenerateTrustScript negative and default name paths
+	if _, err := GenerateTrustScript("", "ca"); err == nil {
+		t.Fatalf("expected error for empty caCertPath in GenerateTrustScript")
+	}
+	scriptsDefault, err := GenerateTrustScript(ca1.Record.CertPath, "")
+	if err != nil || !strings.Contains(scriptsDefault["debian"], "mgtls-ca.crt") {
+		t.Fatalf("expected default mgtls-ca name in GenerateTrustScript: %+v, err=%v", scriptsDefault, err)
+	}
+}
+

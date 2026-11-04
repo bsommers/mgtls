@@ -126,4 +126,100 @@ targets:
 	if resp["error"] != nil {
 		t.Fatalf("unexpected mcp error: %v", resp["error"])
 	}
+
+	// 11. Additional subcommands: ca list, ca trust-script, cert revoke, ssh inspect, acme providers, acme renew-check, target list, status
+	caListOut := execCLI("ca", "list")
+	if !strings.Contains(caListOut, "corp-root") {
+		t.Fatalf("expected corp-root in ca list: %s", caListOut)
+	}
+	trustOut := execCLI("ca", "trust-script", "--name", "corp-root")
+	if !strings.Contains(trustOut, "update-ca-certificates") {
+		t.Fatalf("expected update-ca-certificates in ca trust-script: %s", trustOut)
+	}
+	caInspectOut := execCLI("cert", "inspect", "--name", "corp-root")
+	if !strings.Contains(caInspectOut, "Corp Root CA") {
+		t.Fatalf("expected Corp Root CA in cert inspect: %s", caInspectOut)
+	}
+	revOut := execCLI("cert", "revoke", "--ca", "corp-inter", "--name", "fastapi-srv", "--reason", "1")
+	if !strings.Contains(revOut, `"revoked": true`) {
+		t.Fatalf("expected revoked=true in cert revoke: %s", revOut)
+	}
+	sshCertPath := filepath.Join(storeDir, "ssh", "certs", "alice-cert", "id_key-cert.pub")
+	sshInspOut := execCLI("ssh", "inspect", "--cert", sshCertPath)
+	if !strings.Contains(sshInspOut, "alice@corp") {
+		t.Fatalf("expected alice@corp in ssh inspect: %s", sshInspOut)
+	}
+	acmeProvOut := execCLI("acme", "providers")
+	if !strings.Contains(acmeProvOut, "letsencrypt") {
+		t.Fatalf("expected letsencrypt in acme providers: %s", acmeProvOut)
+	}
+	acmeRenewOut := execCLI("acme", "renew-check", "--days", "120")
+	if !strings.Contains(acmeRenewOut, "acme-edge") {
+		t.Fatalf("expected acme-edge in acme renew-check: %s", acmeRenewOut)
+	}
+	targetListOut := execCLI("target", "list")
+	if !strings.Contains(targetListOut, "proxmox") {
+		t.Fatalf("expected proxmox in target list: %s", targetListOut)
+	}
+	statusOut := execCLI("status")
+	if !strings.Contains(statusOut, "corp-root") {
+		t.Fatalf("expected corp-root in status output: %s", statusOut)
+	}
 }
+
+func TestCLIFlagsHelpVersionAndNegativePaths(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	storeDir := filepath.Join(tmpDir, ".mgtls")
+
+	runArgs := func(args ...string) (string, error) {
+		var out, errBuf bytes.Buffer
+		err := run(ctx, args, strings.NewReader(""), &out, &errBuf)
+		return out.String(), err
+	}
+
+	// Help & Version flags
+	for _, helpArg := range [][]string{{}, {"--help"}, {"help"}, {"-h"}} {
+		out, err := runArgs(helpArg...)
+		if err != nil || !strings.Contains(out, "Usage:") {
+			t.Fatalf("expected usage output for %v, got err=%v, out=%s", helpArg, err, out)
+		}
+	}
+	for _, verArg := range []string{"version", "--version", "-v"} {
+		out, err := runArgs(verArg)
+		if err != nil || !strings.Contains(out, Version) {
+			t.Fatalf("expected version %s for %s, got err=%v, out=%s", Version, verArg, err, out)
+		}
+	}
+
+	// --store-dir=<dir> prefix flag
+	out, err := runArgs("--store-dir="+storeDir, "init")
+	if err != nil || !strings.Contains(out, "initialized") {
+		t.Fatalf("expected init with --store-dir= prefix to succeed, got err=%v, out=%s", err, out)
+	}
+
+	// Negative CLI error paths
+	errCases := [][]string{
+		{"unknown-top-cmd"},
+		{"ca"},
+		{"ca", "unknown-sub"},
+		{"cert"},
+		{"cert", "unknown-sub"},
+		{"cert", "inspect"},
+		{"ssh"},
+		{"ssh", "unknown-sub"},
+		{"acme"},
+		{"acme", "unknown-sub"},
+		{"target"},
+		{"target", "unknown-sub"},
+		{"target", "generate"},
+		{"mcp", "serve", "--transport", "unsupported-proto"},
+	}
+	for _, tc := range errCases {
+		full := append([]string{"--store-dir", storeDir}, tc...)
+		if _, err := runArgs(full...); err == nil {
+			t.Errorf("expected error for CLI args %v, got nil", tc)
+		}
+	}
+}
+

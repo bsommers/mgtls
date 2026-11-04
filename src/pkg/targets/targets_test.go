@@ -164,4 +164,68 @@ func TestGenerateAllTargets(t *testing.T) {
 	if _, err := Generate(s, GenerateRequest{Name: "bad", TargetType: "nonexistent"}); err == nil {
 		t.Errorf("expected error for unsupported target type, got nil")
 	}
+	if _, err := Generate(s, GenerateRequest{Name: "empty", TargetType: "   "}); err == nil {
+		t.Errorf("expected error for empty target type, got nil")
+	}
+	if _, err := Generate(nil, GenerateRequest{TargetType: "fastapi"}); err == nil {
+		t.Errorf("expected error for nil store, got nil")
+	}
 }
+
+func TestGenerateDefaultsAndTLSOnlyMode(t *testing.T) {
+	tmpDir := t.TempDir()
+	s, err := store.New(filepath.Join(tmpDir, "store"))
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	if err := s.Init(); err != nil {
+		t.Fatalf("s.Init: %v", err)
+	}
+
+	if got := defaultPortForTarget("unknown-target"); got != 8443 {
+		t.Errorf("expected default fallback port 8443, got %d", got)
+	}
+
+	wantPorts := map[string]int{
+		"fastapi":    8443,
+		"springboot": 8443,
+		"mcp":        8444,
+		"nginx":      443,
+		"vite":       5173,
+		"proxmox":    8006,
+		"openssh":    22,
+	}
+
+	for _, sp := range SupportedTargets() {
+		customOut := filepath.Join(tmpDir, "custom-out", sp.ID)
+		res, err := Generate(s, GenerateRequest{
+			Name:           "", // defaults to targetType
+			TargetType:     sp.ID,
+			OutputDir:      customOut,
+			Host:           "",    // defaults to localhost
+			Port:           0,     // defaults to defaultPortForTarget
+			MutualTLS:      false, // TLS-only mode
+			CACertPath:     "",    // defaults to certs/ca.crt
+			ServerCertPath: "/nonexistent/server.crt",
+			Extra:          map[string]string{"custom_key": "custom_val"},
+		})
+		if err != nil {
+			t.Fatalf("Generate(%s, MutualTLS=false) failed: %v", sp.ID, err)
+		}
+		if res.Record.Name != sp.ID {
+			t.Errorf("expected defaulted Name %q, got %q", sp.ID, res.Record.Name)
+		}
+		wantNote := fmt.Sprintf("localhost:%d (mTLS=false)", wantPorts[sp.ID])
+		foundNote := false
+		for _, n := range res.Notes {
+			if strings.Contains(n, wantNote) {
+				foundNote = true
+				break
+			}
+		}
+		if !foundNote {
+			t.Errorf("target %s: expected note containing %q, got %v", sp.ID, wantNote, res.Notes)
+		}
+	}
+}
+

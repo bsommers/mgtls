@@ -24,8 +24,10 @@ jobs:
           CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/mgtls ./src/cmd/mgtls
           ./bin/mgtls --version
 
-      - name: Run race-enabled unit & integration test suite
-        run: go test -race -v ./src/...
+      - name: Run race-enabled unit, E2E, and 80% coverage threshold gate
+        run: |
+          go test -race -coverpkg=./src/... -coverprofile=coverage.out ./src/...
+          go tool cover -func=coverage.out | awk '/^total:/ {gsub("%","",$3); if ($3+0 < 80.0) {print "Coverage "$3"% below 80% gate"; exit 1} else {print "Coverage gate PASS: "$3"%"}}'
 
       - name: Reconcile declarative fleet manifest & run doctor gate
         run: |

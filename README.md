@@ -273,6 +273,7 @@ mgtls ssh config-bundle --name corp-ssh-fleet \
 | **Operational Cookbooks** | [`docs/cookbooks/COOKBOOKS.md`](docs/cookbooks/COOKBOOKS.md) | 5 end-to-end executable cookbook workflows (`cookbooks/*.sh`) with architectural diagrams |
 | **IaC & CI/CD Integration Guide** | [`docs/cookbooks/IAC_AND_CICD_GUIDE.md`](docs/cookbooks/IAC_AND_CICD_GUIDE.md) | Terraform/OpenTofu, Ansible, Kubernetes TLS Secrets, Docker Compose, GitHub Actions, and GitLab CI |
 | **Capabilities Manifest** | [`docs/CAPABILITIES.md`](docs/CAPABILITIES.md) | Machine-verifiable capabilities registry (`docs/capabilities.json`) and roadmap |
+| **Test Coverage & Suite Report** | [`docs/TEST_COVERAGE.md`](docs/TEST_COVERAGE.md) | Instrumented coverage report (`83.1%`), P0/P1/P2 gap remediation, E2E example/cookbook matrix, and Shell Test-Quality Checklist |
 | **Changelog** | [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | Release history and verification telemetry |
 
 ---
