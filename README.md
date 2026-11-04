@@ -4,7 +4,7 @@
 
 <br />
 
-[![Release](https://img.shields.io/github/v/release/bsommers/mgtls?style=flat-square&color=10b981)](https://github.com/bsommers/mgtls/releases/tag/v1.0.0)
+[![Release](https://img.shields.io/github/v/release/bsommers/mgtls?style=flat-square&color=10b981)](https://github.com/bsommers/mgtls/releases/tag/v1.1.0)
 [![Go Version](https://img.shields.io/badge/Go-1.26-00ADD8?style=flat-square&logo=go)](https://go.dev/)
 [![CGO_ENABLED=0](https://img.shields.io/badge/CGO__ENABLED-0-06b6d4?style=flat-square)](https://github.com/bsommers/mgtls)
 [![MCP Protocol](https://img.shields.io/badge/MCP-2024--11--05%20%7C%2018%20Tools-a855f7?style=flat-square)](https://bsommers.github.io/mgtls/#mcp)

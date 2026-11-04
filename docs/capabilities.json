@@ -1,9 +1,15 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "project": "mgtls",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "repository": "https://github.com/bsommers/mgtls",
   "homepage": "https://bsommers.github.io/mgtls/",
+  "summary": {
+    "total_capabilities": 9,
+    "operational": 8,
+    "beta": 0,
+    "planned": 1
+  },
   "capabilities": [
     {
       "id": "CAP-PKI-001",
@@ -62,10 +68,18 @@
       "verification": "bash cookbooks/05-iac-and-cicd-integration.sh"
     },
     {
+      "id": "CAP-TEST-001",
+      "name": "End-to-End Examples, Cookbooks & Shell Test-Quality Verification Suite (83.1% Coverage)",
+      "status": "operational",
+      "since": "1.1.0",
+      "package": "src/test/e2e",
+      "verification": "go test -v -race ./src/test/e2e"
+    },
+    {
       "id": "CAP-HSM-001",
       "name": "PKCS#11 & YubiKey PIV Hardware Security Module (HSM) Root CA Signing",
       "status": "planned",
-      "target_release": "1.1.0",
+      "target_release": "1.2.0",
       "package": "src/pkg/pki",
       "verification": "planned"
     }

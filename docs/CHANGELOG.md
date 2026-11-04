@@ -5,6 +5,18 @@ All notable changes to `mgtls` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-11-03
+
+### Added
+- **End-to-End Examples, Cookbooks & Shell Test-Quality Verification Suite (`src/test/e2e/e2e_test.go`)**: Automated Go test harness executing all 5 `cookbooks/*.sh` scripts, all 8 `examples/*` workflows, the Terraform external data source bridge (`cookbooks/iac-cicd/terraform/mgtls-external.sh`), and the 4 Shell Test-Quality Checklist invariants (`bash -euo pipefail` reachability, mocked `PATH` binaries for `pvenode`/`systemctl`/`update-ca-certificates`/`update-ca-trust`/`security`, command-string injection safety, and dispatch-table completeness).
+- **Comprehensive Unit & Negative-Path Test Expansion (`src/pkg/*/*_test.go`, `src/cmd/mgtls/main_test.go`)**: Expanded total test suite from 23 to 56 test functions & subtests, raising cross-package statement coverage to **83.1%** (`98.8%` Go function reachability, `100%` example/cookbook script reachability).
+- **Test Coverage & Suite Robustness Report (`docs/TEST_COVERAGE.md`)**: Detailed step-by-step test execution telemetry, per-package coverage deltas, and P0/P1/P2 gap remediation documentation.
+- **Open-Source Ecosystem Comparison & ASCII Capability Heatmap (`docs/architecture/ECOSYSTEM_COMPARISON.md`, `README.md`, `docs/index.html`)**: Side-by-side comparison matrix and ASCII capability heatmap against `Smallstep (step-ca/step-cli)`, `HashiCorp Vault / OpenBao`, `Cloudflare cfssl`, `Square certstrap`, `OpenVPN easy-rsa`, `FiloSottile mkcert`, and `lego / certbot / acme.sh`.
+- **Expanded Purpose & Problem Statement Documentation**: Detailed problem statement, before/after comparison tables, and target personas across `README.md`, `docs/index.html`, `docs/user-guide/USER_GUIDE.md`, and `docs/architecture/SYSTEM_ARCHITECTURE.md`.
+
+### Verification Telemetry
+- **Test Suite**: `go test -v -race -coverpkg=./src/... ./src/...` — 9/9 packages passing (`56/56` test functions & subtests), `83.1%` cross-package statement coverage (`82.9%` package-local), `98.8%` Go function reachability (`85/86`), `100%` shell cookbook/example reachability (`14/14`).
+
 ## [1.0.0] - 2026-11-02
 
 ### Added
