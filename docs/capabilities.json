@@ -1,7 +1,7 @@
 {
   "schema_version": "1.1.0",
   "project": "mgtls",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "repository": "https://github.com/bsommers/mgtls",
   "homepage": "https://bsommers.github.io/mgtls/",
   "summary": {

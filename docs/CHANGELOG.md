@@ -5,6 +5,22 @@ All notable changes to `mgtls` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-11-05
+
+### Security
+- **Store Boundary Path-Traversal Protection (`src/pkg/store/store.go`)**: Added `(*Store).SafePath` using `filepath.Rel(s.BaseDir, full)` and enforced it across `WriteKey` and `WritePublic` so untrusted `name` inputs via MCP `tools/call` or YAML fleet manifests cannot escape the `.mgtls` store root (`..` traversal rejected with explicit error).
+- **OS Trust Anchor Filename Sanitization (`src/pkg/pki/pki.go`)**: Added `sanitizeTrustAnchorName` in `GenerateTrustScript` restricting generated Debian/RHEL trust anchor filenames to `[a-zA-Z0-9._-]` to prevent shell metacharacter or path-separator injection.
+
+### Fixed
+- **Per-Certificate CRL Revocation Reason Preservation (`src/pkg/pki/pki.go`, `src/pkg/store/store.go`)**: Added `RevokeReason int` (`json:"revoke_reason,omitempty"`) to `store.CertRecord` and updated `RevokeCert` so rebuilding a CA's CRL across multiple revoked certificates preserves each certificate's original RFC 5280 reason code.
+
+### Changed
+- **Leaf Certificate Artifact Persistence Deduplication (`src/pkg/pki/pki.go`)**: Extracted `writeLeafCertArtifacts` shared by `IssueCert` and `IssueSelfSigned`, eliminating duplicated persistence blocks (`cert.pem`, `key.pem`, `fullchain.pem`, `ca-chain.pem`, `cert.der`, `bundle.pem`).
+- **5-Axis Code Review & Quality Audit Report (`docs/CODE_REVIEW.md`)**: Documented the full `/agent-skills:code-review-and-quality` audit across Correctness, Readability, Architecture, Security, Performance, Dependency Discipline, and File Size cohesion.
+
+### Verification Telemetry
+- **Static Analysis & Test Suite**: `go vet ./src/...` (`0` warnings) and `go test -v -race -coverpkg=./src/... ./src/...` — 9/9 packages passing, **83.2%** cross-package statement coverage (`100%` `cmd/mgtls`, `93.3%` `store`, `84.8%` `pki`, `83.2%` `mcpserver`, 14/14 shell cookbooks & examples).
+
 ## [1.1.0] - 2026-11-03
 
 ### Added
