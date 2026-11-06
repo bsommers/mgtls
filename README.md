@@ -152,13 +152,34 @@ flowchart TD
 
 ## Quickstart
 
-### 1. Build the Static Binary
+### 1. Install `mgtls` (One-Line Installer, Local Build, or Container)
 
 ```bash
+# Option A: Install to ~/.local/bin (unprivileged default) or custom prefix
+./install.sh --local
+# Or download & SHA-256 verify prebuilt release binary:
+curl -fsSL https://bsommers.github.io/mgtls/install.sh | bash -s -- --from-release
+
+# Option B: Build the zero-CGO static binary directly
 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/mgtls ./src/cmd/mgtls
+
+# Option C: Build minimal scratch container image
+docker build -t mgtls:latest .
 ```
 
-### 2. Imperative CLI Workflow (Root CA → Intermediate CA → mTLS Certificates → FastAPI Bundle)
+### 2. Zero-State Onboarding (`init` $\rightarrow$ `doctor` $\rightarrow$ `apply` $\rightarrow$ `guide`)
+
+```bash
+# Initialize .mgtls workspace, Root CA, and starter mgtls.yaml manifest
+mgtls init --with-root-ca --starter --yes
+
+# Reconcile starter fleet and audit health/key permissions
+mgtls apply -f mgtls.yaml
+mgtls doctor
+mgtls guide
+```
+
+### 3. Imperative CLI Workflow (Root CA → Intermediate CA → mTLS Certificates → FastAPI Bundle)
 
 ```bash
 # Initialize workspace (.mgtls)
@@ -275,6 +296,7 @@ mgtls ssh config-bundle --name corp-ssh-fleet \
 | **Capabilities Manifest** | [`docs/CAPABILITIES.md`](docs/CAPABILITIES.md) | Machine-verifiable capabilities registry (`docs/capabilities.json`) and roadmap |
 | **Test Coverage & Suite Report** | [`docs/TEST_COVERAGE.md`](docs/TEST_COVERAGE.md) | Instrumented coverage report (`83.2%`), P0/P1/P2 gap remediation, E2E example/cookbook matrix, and Shell Test-Quality Checklist |
 | **5-Axis Code Review & Audit** | [`docs/CODE_REVIEW.md`](docs/CODE_REVIEW.md) | Multi-axis code review (Correctness, Readability, Architecture, Security, Performance), severity-labeled findings, and security hardening verification |
+| **Forward Roadmap (`v1.2.0+`)** | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Saved backlog of upcoming options (Option 2: New Target Generators, Option 3: `mgtls watch` Renewal Daemon, Option 4: Hardware-Backed Root CA / KMS) |
 | **Changelog** | [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | Release history and verification telemetry |
 
 ---

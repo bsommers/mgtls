@@ -1,0 +1,53 @@
+# `mgtls` Forward Roadmap & Next Options (`v1.2.0+`)
+
+> **Status**: Option 1 (Distribution & Zero-Friction Onboarding) is **COMPLETED**.  
+> The remaining options below are preserved verbatim for selection and execution in upcoming milestones.
+
+---
+
+## Completed Milestone
+
+### [x] Option 1: Distribution & Zero-Friction Onboarding (`COMPLETED`)
+- **Multi-Target Installer ([`install.sh`](../install.sh), [`scripts/install.sh`](../scripts/install.sh), [`docs/install.sh`](install.sh))**:
+  - Supports `--local` (`${XDG_BIN_HOME:-$HOME/.local/bin}`), `--global` (`/usr/local/bin`), `--prefix DIR`, `--copy`, `--from-release` (downloads prebuilt binary + `SHA256SUMS` from GitHub Releases and verifies SHA-256), `--dry-run`, `--uninstall`, `--force`, and `-h/--help`.
+  - Protects unmanaged binaries unless `--force` is passed and prints `export PATH="..."` + `Next steps:` breadcrumbs.
+- **Minimal Scratch Container ([`Dockerfile`](../Dockerfile))**:
+  - Multi-stage `CGO_ENABLED=0` Alpine builder $\rightarrow$ `FROM scratch` runtime image with CA roots and `/usr/local/bin/mgtls`.
+- **In-Tool Onboarding & Workflow Breadcrumbs ([`src/cmd/mgtls/main.go`](../src/cmd/mgtls/main.go))**:
+  - `mgtls init --with-root-ca --starter --yes` idempotently initializes `.mgtls/`, creates the Root CA, and writes a starter `mgtls.yaml` manifest.
+  - `mgtls guide` prints the 5-stage offline onboarding lifecycle guide (`init` $\rightarrow$ `doctor` $\rightarrow$ `apply`/`target` $\rightarrow$ `ssh`/`acme` $\rightarrow$ `mcp`).
+  - `mgtls init`, `mgtls apply`, and `mgtls doctor` emit progressive `Next steps:` breadcrumbs to `stderr` (suppressed via `--quiet`) so `stdout` remains pure JSON for piping.
+
+---
+
+## Remaining Options for Upcoming Milestones (Prompt Later)
+
+### [ ] Option 2: New Target Framework Generators (`v1.2.0`)
+Expand `mgtls target generate` in `src/pkg/targets/targets.go` and `src/pkg/targets/templates.go` beyond the initial 7 targets (`fastapi`, `springboot`, `mcp`, `nginx`, `vite`, `proxmox`, `openssh`):
+1. **Cloud-Native Ingress & Service Mesh**:
+   - **`caddy`**: Automatic mTLS (`client_auth { mode require_and_verify }`) Caddyfile bundle.
+   - **`traefik`**: Dynamic TLS `ClientAuthType: RequireAndVerifyClientCert` YAML bundle.
+   - **`envoy`**: Static/xDS `DownstreamTlsContext` + SPIFFE SAN validation configuration.
+2. **Data Stores**:
+   - **`postgres`**: `postgresql.conf` SSL settings + `pg_hba.conf` (`hostssl ... clientcert=verify-full`) + client `psql` connection script.
+   - **`redis`**: `redis.conf` (`tls-port`, `tls-auth-clients yes`) + `redis-cli --tls` verification script.
+3. **Polyglot RPC & Backend**:
+   - **`grpc-go`**: Go `credentials.NewTLS` mutual TLS server & client starter stubs.
+   - **`nodejs-express`**: Node.js `node:https` (`requestCert: true, rejectUnauthorized: true`) mTLS server & client bundle.
+
+---
+
+### [ ] Option 3: Autonomous Renewal Daemon & Webhook Hooks (`mgtls watch` / `systemd`)
+Add continuous lifecycle automation in `src/pkg/profile/profile.go` and `src/cmd/mgtls/main.go`:
+1. **`mgtls watch` Daemon Subcommand**:
+   - `mgtls watch --manifest mgtls.yaml --interval 12h --renew-before 30d --on-renew "systemctl reload nginx"`
+   - Periodically runs `Doctor` expiration checks, automatically re-issues expiring X.509 leaf certificates, OpenSSH certificates, and ACME certificates, re-renders affected target bundles, and executes `--on-renew` reload hooks.
+2. **`systemd` Service & Timer Generator (`mgtls systemd generate`)**:
+   - Generates `mgtls-renew.service` and `mgtls-renew.timer` units for unattended host deployment.
+
+---
+
+### [ ] Option 4: Hardware-Backed Root CA & YubiKey / KMS Support (`CAP-HSM-001`)
+Implement the planned capability from [`docs/CAPABILITIES.md`](CAPABILITIES.md):
+1. **Pluggable `crypto.Signer` Seam (`src/pkg/pki`, `src/pkg/sshca`)**:
+   - Support signing X.509 Intermediate/Leaf certificates and OpenSSH User/Host certificates via `SSH_AUTH_SOCK` (`ssh-agent`), PKCS#11 modules (`softhsm2` / YubiKey PIV), or external KMS hooks so Root CA private keys never touch disk.

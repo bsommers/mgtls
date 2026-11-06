@@ -198,6 +198,33 @@ func TestCLIFlagsHelpVersionAndNegativePaths(t *testing.T) {
 		t.Fatalf("expected init with --store-dir= prefix to succeed, got err=%v, out=%s", err, out)
 	}
 
+	// Guide command & idempotent init --with-root-ca --starter --yes
+	guideOut, err := runArgs("guide")
+	if err != nil || !strings.Contains(guideOut, "Onboarding & End-to-End Workflow Guide") {
+		t.Fatalf("expected guide output, got err=%v, out=%s", err, guideOut)
+	}
+
+	origWD, _ := os.Getwd()
+	if err := os.Chdir(tmpDir); err == nil {
+		defer func() { _ = os.Chdir(origWD) }()
+		var outBuf, errBuf bytes.Buffer
+		if err := run(ctx, []string{"--store-dir", storeDir, "init", "--with-root-ca", "--starter", "--yes"}, strings.NewReader(""), &outBuf, &errBuf); err != nil {
+			t.Fatalf("init --with-root-ca --starter: %v", err)
+		}
+		if !strings.Contains(errBuf.String(), "Next steps:") {
+			t.Fatalf("expected Next steps breadcrumb on stderr, got %s", errBuf.String())
+		}
+		// Second run is idempotent without --force
+		outBuf.Reset()
+		errBuf.Reset()
+		if err := run(ctx, []string{"--store-dir", storeDir, "init", "--with-root-ca", "--starter", "--quiet"}, strings.NewReader(""), &outBuf, &errBuf); err != nil {
+			t.Fatalf("idempotent second init: %v", err)
+		}
+		if errBuf.Len() != 0 {
+			t.Fatalf("expected --quiet to suppress stderr Next steps, got %s", errBuf.String())
+		}
+	}
+
 	// Negative CLI error paths
 	errCases := [][]string{
 		{"unknown-top-cmd"},

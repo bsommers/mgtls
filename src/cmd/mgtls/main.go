@@ -55,8 +55,11 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	case "version", "--version", "-v":
 		fmt.Fprintf(stdout, "mgtls version %s\n", Version)
 		return nil
+	case "guide":
+		printGuide(stdout)
+		return nil
 	case "init":
-		return runInit(storeDir, rest, stdout)
+		return runInit(storeDir, rest, stdout, stderr)
 	case "ca":
 		return runCA(storeDir, rest, stdout)
 	case "cert":
@@ -68,15 +71,15 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	case "target":
 		return runTarget(storeDir, rest, stdout)
 	case "apply":
-		return runApply(ctx, storeDir, rest, stdout)
+		return runApply(ctx, storeDir, rest, stdout, stderr)
 	case "status":
 		return runStatus(storeDir, rest, stdout)
 	case "doctor":
-		return runDoctor(storeDir, rest, stdout)
+		return runDoctor(storeDir, rest, stdout, stderr)
 	case "mcp":
 		return runMCP(ctx, storeDir, rest, stdin, stdout)
 	default:
-		return fmt.Errorf("unknown command %q (run 'mgtls --help' for usage)", cmd)
+		return fmt.Errorf("unknown command %q (run 'mgtls --help' or 'mgtls guide' for usage)", cmd)
 	}
 }
 
@@ -115,7 +118,41 @@ Commands:
   status                     Display store inventory manifest
   doctor                     Audit store health, key permissions, and certificate expirations
   mcp serve                  Run the Model Context Protocol (MCP) JSON-RPC 2.0 server (stdio or HTTP/mTLS)
+  guide                      View the full end-to-end onboarding & workflow guide
   version                    Print version
+
+Quickstart (Install -> Init -> Verify -> Run):
+  1. mgtls init --with-root-ca --starter
+  2. mgtls doctor
+  3. mgtls apply -f mgtls.yaml
+  4. mgtls guide
+`, Version)
+}
+
+func printGuide(w io.Writer) {
+	fmt.Fprintf(w, `mgtls v%s — Onboarding & End-to-End Workflow Guide
+
+1. INITIALIZE WORKSPACE & ROOT CA
+   mgtls init --with-root-ca --starter
+   # Creates .mgtls/ store (0700 dirs, 0600 keys), Root CA, and starter mgtls.yaml
+
+2. AUDIT HEALTH & KEY PERMISSIONS
+   mgtls doctor
+   # Verifies manifest integrity, 0600 key permissions, and certificate expirations
+
+3. RECONCILE DECLARATIVE FLEET OR GENERATE TARGET BUNDLES
+   mgtls apply -f mgtls.yaml
+   mgtls target generate --type fastapi --name api-mtls --host api.internal --mtls --out ./fastapi-bundle
+   # Supported targets: fastapi, springboot, mcp, nginx, vite, proxmox, openssh
+
+4. ISSUE OPENSSH CAs & PUBLIC ACME v2 CERTIFICATES
+   mgtls ssh ca-create --name ssh-user-ca --type user
+   mgtls acme providers
+   mgtls acme obtain --provider letsencrypt-staging --email sec@example.com --domains example.com
+
+5. RUN MODEL CONTEXT PROTOCOL (MCP) SERVER FOR AI AGENTS
+   mgtls mcp serve --transport stdio
+   mgtls mcp serve --transport http --addr 127.0.0.1:8443 --tls-cert cert.pem --tls-key key.pem --client-ca ca.pem
 `, Version)
 }
 
@@ -139,16 +176,48 @@ func splitCSV(s string) []string {
 	return out
 }
 
-func runInit(defaultStoreDir string, args []string, stdout io.Writer) error {
+const starterManifestYAML = `# mgtls.yaml — Declarative PKI, mTLS, OpenSSH CA & Target Fleet Manifest
+store_dir: .mgtls
+
+cas:
+  - name: root-ca
+    common_name: "mgtls Local Root CA"
+    algorithm: ed25519
+    valid_days: 3650
+
+certs:
+  - name: api-server
+    common_name: localhost
+    ca_name: root-ca
+    role: mtls
+    algorithm: ed25519
+    dns_names: [localhost, api.internal]
+    ip_addresses: [127.0.0.1]
+
+  - name: api-client
+    common_name: api-client
+    ca_name: root-ca
+    role: client
+    algorithm: ed25519
+`
+
+func runInit(defaultStoreDir string, args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	storeDir := fs.String("store-dir", defaultStoreDir, "Store directory")
 	withRoot := fs.Bool("with-root-ca", false, "Also create a default Root CA")
 	rootName := fs.String("root-name", "root-ca", "Root CA name")
 	rootCN := fs.String("root-cn", "mgtls Local Root CA", "Root CA Common Name")
 	algo := fs.String("algo", "ed25519", "Key algorithm")
+	starter := fs.Bool("starter", false, "Write a starter mgtls.yaml fleet manifest if absent")
+	force := fs.Bool("force", false, "Overwrite starter mgtls.yaml if it already exists")
+	nonInteractive := fs.Bool("non-interactive", false, "Non-interactive mode for CI and AI agents")
+	yes := fs.Bool("yes", false, "Alias for --non-interactive")
+	quiet := fs.Bool("quiet", false, "Suppress Next steps hints on stderr")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	_ = nonInteractive
+	_ = yes
 
 	s, err := store.New(*storeDir)
 	if err != nil {
@@ -162,17 +231,36 @@ func runInit(defaultStoreDir string, args []string, stdout io.Writer) error {
 		"status":    "initialized",
 	}
 	if *withRoot {
-		caRes, err := pki.CreateCA(s, pki.CARequest{
-			Name:       *rootName,
-			CommonName: *rootCN,
-			Algorithm:  *algo,
-		})
-		if err != nil {
-			return err
+		if existingCA, getErr := s.GetCA(*rootName); getErr == nil && !*force {
+			res["root_ca"] = *existingCA
+		} else {
+			caRes, err := pki.CreateCA(s, pki.CARequest{
+				Name:       *rootName,
+				CommonName: *rootCN,
+				Algorithm:  *algo,
+			})
+			if err != nil {
+				return err
+			}
+			res["root_ca"] = caRes.Record
 		}
-		res["root_ca"] = caRes.Record
 	}
-	return writeJSON(stdout, res)
+	if *starter {
+		manifestFile := "mgtls.yaml"
+		if _, statErr := os.Stat(manifestFile); os.IsNotExist(statErr) || *force {
+			if err := os.WriteFile(manifestFile, []byte(starterManifestYAML), 0644); err != nil {
+				return fmt.Errorf("write starter %s: %w", manifestFile, err)
+			}
+			res["starter_manifest"] = manifestFile
+		}
+	}
+	if err := writeJSON(stdout, res); err != nil {
+		return err
+	}
+	if !*quiet && stderr != nil {
+		fmt.Fprintf(stderr, "Initialized mgtls workspace in %s\nNext steps:\n  1. mgtls doctor                                     # verify store health and key permissions\n  2. mgtls target generate --type fastapi --name demo # scaffold a ready-to-run mTLS bundle\n  3. mgtls guide                                      # view the full workflow guide\n", s.BaseDir)
+	}
+	return nil
 }
 
 func runCA(defaultStoreDir string, args []string, stdout io.Writer) error {
@@ -797,10 +885,11 @@ func runTarget(defaultStoreDir string, args []string, stdout io.Writer) error {
 	}
 }
 
-func runApply(ctx context.Context, defaultStoreDir string, args []string, stdout io.Writer) error {
+func runApply(ctx context.Context, defaultStoreDir string, args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("apply", flag.ContinueOnError)
 	storeDir := fs.String("store-dir", defaultStoreDir, "Store directory")
 	file := fs.String("f", "mgtls.yaml", "Path to declarative YAML/JSON manifest")
+	quiet := fs.Bool("quiet", false, "Suppress Next steps hints on stderr")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -820,7 +909,13 @@ func runApply(ctx context.Context, defaultStoreDir string, args []string, stdout
 	if err != nil {
 		return err
 	}
-	return writeJSON(stdout, report)
+	if err := writeJSON(stdout, report); err != nil {
+		return err
+	}
+	if !*quiet && stderr != nil {
+		fmt.Fprintf(stderr, "Applied fleet manifest %s\nNext steps:\n  1. mgtls doctor  # audit key permissions and certificate validity\n  2. mgtls status  # inspect the reconciled store inventory\n", *file)
+	}
+	return nil
 }
 
 func runStatus(defaultStoreDir string, args []string, stdout io.Writer) error {
@@ -841,10 +936,11 @@ func runStatus(defaultStoreDir string, args []string, stdout io.Writer) error {
 	return writeJSON(stdout, m)
 }
 
-func runDoctor(defaultStoreDir string, args []string, stdout io.Writer) error {
+func runDoctor(defaultStoreDir string, args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	storeDir := fs.String("store-dir", defaultStoreDir, "Store directory")
 	warnDays := fs.Int("warn-days", 30, "Warn threshold in days")
+	quiet := fs.Bool("quiet", false, "Suppress Next steps hints on stderr")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -856,7 +952,13 @@ func runDoctor(defaultStoreDir string, args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return writeJSON(stdout, rep)
+	if err := writeJSON(stdout, rep); err != nil {
+		return err
+	}
+	if !*quiet && stderr != nil {
+		fmt.Fprintf(stderr, "Next steps:\n  1. mgtls status        # inspect managed CAs, certificates, and targets\n  2. mgtls apply -f ...  # reconcile declarative fleet manifests\n  3. mgtls guide         # view the full workflow guide\n")
+	}
+	return nil
 }
 
 func runMCP(ctx context.Context, defaultStoreDir string, args []string, stdin io.Reader, stdout io.Writer) error {

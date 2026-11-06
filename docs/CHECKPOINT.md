@@ -9,6 +9,7 @@
   4. `/release`: Cut semantic version `v1.1.0`, synchronized `docs/CHANGELOG.md`, `docs/CAPABILITIES.md`, `docs/capabilities.json`, tagged `v1.1.0`, built cross-platform binaries, and published GitHub Release `v1.1.0`.
   5. `/agent-skills:code-review-and-quality`: Completed 5-Axis Code Review (`docs/CODE_REVIEW.md`), remediated store path-traversal boundary (`Store.SafePath`), multi-cert CRL revocation reason preservation (`CertRecord.RevokeReason`), trust-anchor shell sanitization (`sanitizeTrustAnchorName`), and leaf-cert artifact deduplication (`writeLeafCertArtifacts`), reaching `83.2%` statement coverage.
   6. `/release` (`v1.1.1`): Cut patch release `v1.1.1`, synchronized `docs/CHANGELOG.md`, `docs/CAPABILITIES.md`, `docs/capabilities.json`, `README.md`, `docs/index.html`, tagged `v1.1.1`, built 5 cross-platform binaries + `SHA256SUMS`, and published GitHub Release `v1.1.1`.
+  7. **Option 1 (Distribution & Onboarding)**: Built `install.sh` (`scripts/install.sh`, `docs/install.sh`), `Dockerfile` (multi-stage `FROM scratch`), `mgtls guide`, `mgtls init --starter --yes`, and `stderr` `Next steps:` breadcrumbs (`--quiet`). Saved remaining Options 2, 3, and 4 in `docs/ROADMAP.md` to prompt the user later.
 - **Dead Ends:** None.
 - **Working-Tree & Background-Process State:**
   - Clean working tree on branch `main` synced with `origin/main` and tag `v1.1.1`.
