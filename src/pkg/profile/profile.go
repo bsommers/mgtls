@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -52,6 +54,46 @@ type DoctorFinding struct {
 type DoctorReport struct {
 	Healthy  bool            `json:"healthy"`
 	Findings []DoctorFinding `json:"findings"`
+}
+
+// WatchOptions configures autonomous renewal and hook execution.
+type WatchOptions struct {
+	ManifestPath string        `json:"manifest_path"`
+	Interval     time.Duration `json:"interval"`
+	RenewBefore  time.Duration `json:"renew_before"`
+	OnRenewHook  string        `json:"on_renew_hook,omitempty"`
+	Once         bool          `json:"once"`
+}
+
+// RenewalCycleReport summarizes a single autonomous renewal pass.
+type RenewalCycleReport struct {
+	CheckedAt          time.Time `json:"checked_at"`
+	RenewedCerts       []string  `json:"renewed_certs"`
+	RenewedSelfSigned  []string  `json:"renewed_self_signed"`
+	RenewedSSHCerts    []string  `json:"renewed_ssh_certs"`
+	RenewedACMECerts   []string  `json:"renewed_acme_certs"`
+	RegeneratedTargets []string  `json:"regenerated_targets"`
+	HookExecuted       bool      `json:"hook_executed"`
+	HookOutput         string    `json:"hook_output,omitempty"`
+}
+
+// SystemdRequest configures systemd .service and .timer unit generation.
+type SystemdRequest struct {
+	UnitName     string `json:"unit_name"`
+	BinaryPath   string `json:"binary_path"`
+	ManifestPath string `json:"manifest_path"`
+	StoreDir     string `json:"store_dir"`
+	Calendar     string `json:"calendar"`     // e.g. "*-*-* 00,12:00:00"
+	RenewBefore  string `json:"renew_before"` // e.g. "720h" (30d)
+	OnRenewHook  string `json:"on_renew_hook,omitempty"`
+	OutputDir    string `json:"output_dir"`
+}
+
+// SystemdBundle holds paths and contents of generated systemd units.
+type SystemdBundle struct {
+	ServicePath string   `json:"service_path"`
+	TimerPath   string   `json:"timer_path"`
+	InstallCmds []string `json:"install_cmds"`
 }
 
 // LoadFleetSpec reads and parses a YAML or JSON fleet manifest from disk.
@@ -501,6 +543,309 @@ func RunDoctor(s *store.Store, warnDays int) (*DoctorReport, error) {
 	}
 
 	return report, nil
+}
+
+// RunRenewalCycle inspects the store and manifest, renews any leaf certificates, self-signed certificates, SSH certificates, or ACME certificates expiring within renewBefore, regenerates targets if any renewal occurred, and optionally runs onRenewHook.
+func RunRenewalCycle(ctx context.Context, s *store.Store, spec *FleetSpec, renewBefore time.Duration, onRenewHook string) (*RenewalCycleReport, error) {
+	if s == nil {
+		return nil, errors.New("store is nil")
+	}
+	if renewBefore <= 0 {
+		renewBefore = 30 * 24 * time.Hour
+	}
+	if err := s.Init(); err != nil {
+		return nil, err
+	}
+	m, err := s.LoadManifest()
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now().UTC()
+	cutoff := now.Add(renewBefore)
+
+	rep := &RenewalCycleReport{
+		CheckedAt:          now,
+		RenewedCerts:       []string{},
+		RenewedSelfSigned:  []string{},
+		RenewedSSHCerts:    []string{},
+		RenewedACMECerts:   []string{},
+		RegeneratedTargets: []string{},
+	}
+
+	certNeedsRenewal := make(map[string]bool)
+	for _, c := range m.Certs {
+		if c.Revoked || c.NotAfter.Before(cutoff) {
+			certNeedsRenewal[c.Name] = true
+		}
+	}
+	sshNeedsRenewal := make(map[string]bool)
+	for _, sc := range m.SSHCerts {
+		if !sc.ValidBefore.IsZero() && sc.ValidBefore.Before(cutoff) {
+			sshNeedsRenewal[sc.Name] = true
+		}
+	}
+	acmeNeedsRenewal := make(map[string]bool)
+	for _, ac := range m.ACMECerts {
+		if !ac.NotAfter.IsZero() && ac.NotAfter.Before(cutoff) {
+			acmeNeedsRenewal[ac.Name] = true
+		}
+	}
+
+	if spec != nil {
+		for _, req := range spec.SelfSigned {
+			if _, exists := s.GetCert(req.Name); exists != nil || certNeedsRenewal[req.Name] {
+				res, err := pki.IssueSelfSigned(s, req)
+				if err != nil {
+					return nil, fmt.Errorf("renew self-signed cert %q: %w", req.Name, err)
+				}
+				rep.RenewedSelfSigned = append(rep.RenewedSelfSigned, res.Record.Name)
+			}
+		}
+		for _, req := range spec.Certs {
+			if _, exists := s.GetCert(req.Name); exists != nil || certNeedsRenewal[req.Name] {
+				res, err := pki.IssueCert(s, req)
+				if err != nil {
+					return nil, fmt.Errorf("renew cert %q: %w", req.Name, err)
+				}
+				rep.RenewedCerts = append(rep.RenewedCerts, res.Record.Name)
+			}
+		}
+		for _, req := range spec.SSHCerts {
+			if _, exists := findSSHCert(s, req.Name); !exists || sshNeedsRenewal[req.Name] {
+				res, err := sshca.SignSSHCert(s, req)
+				if err != nil {
+					return nil, fmt.Errorf("renew SSH cert %q: %w", req.Name, err)
+				}
+				rep.RenewedSSHCerts = append(rep.RenewedSSHCerts, res.Record.Name)
+			}
+		}
+		for _, req := range spec.ACMECerts {
+			if _, exists := findACMECert(s, req.Name); !exists || acmeNeedsRenewal[req.Name] {
+				res, err := acme.ObtainCertificate(ctx, s, req)
+				if err != nil {
+					return nil, fmt.Errorf("renew ACME cert %q: %w", req.Name, err)
+				}
+				rep.RenewedACMECerts = append(rep.RenewedACMECerts, res.Record.Name)
+			}
+		}
+	} else {
+		// Store-only mode (no manifest provided): re-issue expiring X.509 certs from their stored metadata
+		for _, c := range m.Certs {
+			if !certNeedsRenewal[c.Name] {
+				continue
+			}
+			if c.SelfSigned {
+				res, err := pki.IssueSelfSigned(s, pki.SelfSignedRequest{
+					Name:        c.Name,
+					CommonName:  c.CommonName,
+					Role:        c.Role,
+					Algorithm:   c.Algorithm,
+					DNSNames:    c.DNSNames,
+					IPAddresses: c.IPAddresses,
+					URIs:        c.URIs,
+				})
+				if err != nil {
+					return nil, fmt.Errorf("renew store self-signed cert %q: %w", c.Name, err)
+				}
+				rep.RenewedSelfSigned = append(rep.RenewedSelfSigned, res.Record.Name)
+			} else if c.CAName != "" {
+				res, err := pki.IssueCert(s, pki.CertRequest{
+					Name:        c.Name,
+					CommonName:  c.CommonName,
+					CAName:      c.CAName,
+					Role:        c.Role,
+					Algorithm:   c.Algorithm,
+					DNSNames:    c.DNSNames,
+					IPAddresses: c.IPAddresses,
+					URIs:        c.URIs,
+				})
+				if err != nil {
+					return nil, fmt.Errorf("renew store cert %q: %w", c.Name, err)
+				}
+				rep.RenewedCerts = append(rep.RenewedCerts, res.Record.Name)
+			}
+		}
+	}
+
+	totalRenewed := len(rep.RenewedCerts) + len(rep.RenewedSelfSigned) + len(rep.RenewedSSHCerts) + len(rep.RenewedACMECerts)
+	if totalRenewed > 0 {
+		if spec != nil {
+			for _, req := range spec.Targets {
+				resolvedReq, err := resolveTargetPaths(s, req)
+				if err != nil {
+					return nil, fmt.Errorf("resolve target %q after renewal: %w", req.Name, err)
+				}
+				res, err := targets.Generate(s, resolvedReq)
+				if err != nil {
+					return nil, fmt.Errorf("regenerate target %q after renewal: %w", req.Name, err)
+				}
+				rep.RegeneratedTargets = append(rep.RegeneratedTargets, res.Record.Name)
+			}
+		}
+		if strings.TrimSpace(onRenewHook) != "" {
+			cmd := exec.CommandContext(ctx, "sh", "-c", onRenewHook)
+			cmd.Env = append(os.Environ(),
+				fmt.Sprintf("MGTLS_STORE_DIR=%s", s.BaseDir),
+				fmt.Sprintf("MGTLS_RENEWED_COUNT=%d", totalRenewed),
+				fmt.Sprintf("MGTLS_RENEWED_CERTS=%s", strings.Join(rep.RenewedCerts, ",")),
+			)
+			out, err := cmd.CombinedOutput()
+			rep.HookExecuted = true
+			rep.HookOutput = strings.TrimSpace(string(out))
+			if err != nil {
+				return rep, fmt.Errorf("on-renew hook failed: %w (output: %s)", err, rep.HookOutput)
+			}
+		}
+	}
+
+	return rep, nil
+}
+
+// Watch runs RunRenewalCycle immediately and then every opts.Interval until ctx is canceled (or returns after 1 pass when opts.Once is true).
+func Watch(ctx context.Context, s *store.Store, opts WatchOptions, onCycle func(*RenewalCycleReport)) error {
+	if s == nil {
+		return errors.New("store is nil")
+	}
+	var spec *FleetSpec
+	if strings.TrimSpace(opts.ManifestPath) != "" {
+		loaded, err := LoadFleetSpec(opts.ManifestPath)
+		if err != nil {
+			return err
+		}
+		spec = loaded
+	}
+	rep, err := RunRenewalCycle(ctx, s, spec, opts.RenewBefore, opts.OnRenewHook)
+	if err != nil {
+		return err
+	}
+	if onCycle != nil {
+		onCycle(rep)
+	}
+	if opts.Once {
+		return nil
+	}
+
+	interval := opts.Interval
+	if interval <= 0 {
+		interval = 12 * time.Hour
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			if strings.TrimSpace(opts.ManifestPath) != "" {
+				if reloaded, lErr := LoadFleetSpec(opts.ManifestPath); lErr == nil {
+					spec = reloaded
+				}
+			}
+			cycleRep, err := RunRenewalCycle(ctx, s, spec, opts.RenewBefore, opts.OnRenewHook)
+			if err != nil {
+				return err
+			}
+			if onCycle != nil {
+				onCycle(cycleRep)
+			}
+		}
+	}
+}
+
+// GenerateSystemdUnits writes a systemd .service and .timer unit pair for unattended certificate renewal.
+func GenerateSystemdUnits(s *store.Store, req SystemdRequest) (*SystemdBundle, error) {
+	if s == nil {
+		return nil, errors.New("store is nil")
+	}
+	unitName := strings.TrimSpace(req.UnitName)
+	if unitName == "" {
+		unitName = "mgtls-renew"
+	}
+	binPath := strings.TrimSpace(req.BinaryPath)
+	if binPath == "" {
+		binPath = "/usr/local/bin/mgtls"
+	}
+	storeDir := strings.TrimSpace(req.StoreDir)
+	if storeDir == "" {
+		storeDir = s.BaseDir
+	}
+	calendar := strings.TrimSpace(req.Calendar)
+	if calendar == "" {
+		calendar = "*-*-* 00,12:00:00"
+	}
+	renewBefore := strings.TrimSpace(req.RenewBefore)
+	if renewBefore == "" {
+		renewBefore = "720h"
+	}
+	outDir := strings.TrimSpace(req.OutputDir)
+	if outDir == "" {
+		outDir = s.Path("systemd")
+	} else {
+		abs, err := filepath.Abs(outDir)
+		if err != nil {
+			return nil, fmt.Errorf("resolve systemd output dir: %w", err)
+		}
+		outDir = abs
+	}
+	if err := os.MkdirAll(outDir, 0755); err != nil {
+		return nil, fmt.Errorf("mkdir systemd output dir: %w", err)
+	}
+
+	execCmd := fmt.Sprintf("%s --store-dir %q watch --once --renew-before %s", binPath, storeDir, renewBefore)
+	if strings.TrimSpace(req.ManifestPath) != "" {
+		execCmd += fmt.Sprintf(" -f %q", req.ManifestPath)
+	}
+	if strings.TrimSpace(req.OnRenewHook) != "" {
+		execCmd += fmt.Sprintf(" --on-renew %q", req.OnRenewHook)
+	}
+
+	serviceContent := fmt.Sprintf(`[Unit]
+Description=mgtls Autonomous Certificate & Target Renewal (%s)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%s
+PrivateTmp=true
+ProtectSystem=full
+`, unitName, execCmd)
+
+	timerContent := fmt.Sprintf(`[Unit]
+Description=mgtls Autonomous Certificate Renewal Timer (%s)
+
+[Timer]
+OnCalendar=%s
+RandomizedDelaySec=5m
+Persistent=true
+Unit=%s.service
+
+[Install]
+WantedBy=timers.target
+`, unitName, calendar, unitName)
+
+	servicePath := filepath.Join(outDir, unitName+".service")
+	timerPath := filepath.Join(outDir, unitName+".timer")
+
+	if err := os.WriteFile(servicePath, []byte(serviceContent), 0644); err != nil {
+		return nil, fmt.Errorf("write %s: %w", servicePath, err)
+	}
+	if err := os.WriteFile(timerPath, []byte(timerContent), 0644); err != nil {
+		return nil, fmt.Errorf("write %s: %w", timerPath, err)
+	}
+
+	installCmds := []string{
+		fmt.Sprintf("sudo cp %q %q /etc/systemd/system/", servicePath, timerPath),
+		fmt.Sprintf("sudo systemctl daemon-reload && sudo systemctl enable --now %s.timer", unitName),
+	}
+
+	return &SystemdBundle{
+		ServicePath: servicePath,
+		TimerPath:   timerPath,
+		InstallCmds: installCmds,
+	}, nil
 }
 
 type yamlLine struct {

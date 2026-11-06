@@ -1,7 +1,7 @@
 # `mgtls` Forward Roadmap & Next Options (`v1.2.0+`)
 
-> **Status**: Option 1 (Distribution & Zero-Friction Onboarding) and Option 2 (14 Target Framework Generators) are **COMPLETED**.  
-> The remaining options (Option 3 and Option 4) are preserved verbatim below for selection and execution in upcoming milestones.
+> **Status**: Option 1 (Distribution & Zero-Friction Onboarding), Option 2 (14 Target Framework Generators), and Option 3 (Autonomous Renewal Daemon & `systemd` Generator) are **COMPLETED**.  
+> Option 4 (Hardware-Backed Root CA & YubiKey / KMS Support) is preserved below for selection and execution next.
 
 ---
 
@@ -37,13 +37,13 @@ Expanded `mgtls target generate` in `src/pkg/targets/targets.go` and `src/pkg/ta
 
 ---
 
-### [ ] Option 3: Autonomous Renewal Daemon & Webhook Hooks (`mgtls watch` / `systemd`)
-Add continuous lifecycle automation in `src/pkg/profile/profile.go` and `src/cmd/mgtls/main.go`:
+### [x] Option 3: Autonomous Renewal Daemon & Webhook Hooks (`mgtls watch` / `systemd` — `COMPLETED`)
+Added continuous lifecycle automation in `src/pkg/profile/profile.go` (`RunRenewalCycle`, `Watch`, `GenerateSystemdUnits`) and `src/cmd/mgtls/main.go` (`mgtls watch`, `mgtls systemd generate`):
 1. **`mgtls watch` Daemon Subcommand**:
-   - `mgtls watch --manifest mgtls.yaml --interval 12h --renew-before 30d --on-renew "systemctl reload nginx"`
-   - Periodically runs `Doctor` expiration checks, automatically re-issues expiring X.509 leaf certificates, OpenSSH certificates, and ACME certificates, re-renders affected target bundles, and executes `--on-renew` reload hooks.
+   - `mgtls watch --manifest mgtls.yaml --interval 12h --renew-before 720h --on-renew "systemctl reload nginx"` (plus `--once` for cron/systemd oneshot execution).
+   - Periodically runs expiration checks, automatically re-issues expiring X.509 leaf certificates, self-signed certificates, OpenSSH certificates, and ACME certificates, re-renders affected target bundles, and executes `--on-renew` reload hooks with `MGTLS_STORE_DIR`, `MGTLS_RENEWED_COUNT`, and `MGTLS_RENEWED_CERTS`.
 2. **`systemd` Service & Timer Generator (`mgtls systemd generate`)**:
-   - Generates `mgtls-renew.service` and `mgtls-renew.timer` units for unattended host deployment.
+   - Generates `mgtls-renew.service` (`PrivateTmp=true`, `ProtectSystem=full`) and `mgtls-renew.timer` (`Persistent=true`, `RandomizedDelaySec=5m`) units for unattended host deployment.
 
 ---
 

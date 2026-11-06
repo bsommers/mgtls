@@ -664,3 +664,98 @@ func TestRunDoctorComprehensiveStates(t *testing.T) {
 	}
 }
 
+func TestRunRenewalCycleWatchAndSystemd(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	s, err := store.New(filepath.Join(tmpDir, ".mgtls"))
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+
+	manifestYAML := `version: "1.0"
+cas:
+  - name: watch-ca
+    common_name: "Watch Root CA"
+    algorithm: ed25519
+    valid_days: 365
+self_signed:
+  - name: watch-ss
+    common_name: ss.local
+    valid_days: 2
+certs:
+  - name: watch-srv
+    common_name: srv.local
+    ca_name: watch-ca
+    role: mtls
+    valid_days: 2
+targets:
+  - name: watch-caddy
+    target_type: caddy
+    ca_name: watch-ca
+    server_cert: watch-srv
+`
+	manifestPath := filepath.Join(tmpDir, "mgtls.yaml")
+	if err := os.WriteFile(manifestPath, []byte(manifestYAML), 0644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	spec, err := LoadFleetSpec(manifestPath)
+	if err != nil {
+		t.Fatalf("LoadFleetSpec: %v", err)
+	}
+	if _, err := Apply(ctx, s, spec); err != nil {
+		t.Fatalf("Apply initial: %v", err)
+	}
+
+	// 1. Watch --once with 72h renew window should renew watch-ss and watch-srv (valid for 2 days = 48h < 72h), regenerate target, and run hook
+	var cycleReports []*RenewalCycleReport
+	err = Watch(ctx, s, WatchOptions{
+		ManifestPath: manifestPath,
+		RenewBefore:  72 * time.Hour,
+		OnRenewHook:  "echo renewed-ok",
+		Once:         true,
+	}, func(rep *RenewalCycleReport) {
+		cycleReports = append(cycleReports, rep)
+	})
+	if err != nil {
+		t.Fatalf("Watch(--once): %v", err)
+	}
+	if len(cycleReports) != 1 {
+		t.Fatalf("expected 1 cycle report, got %d", len(cycleReports))
+	}
+	rep := cycleReports[0]
+	if len(rep.RenewedCerts) != 1 || len(rep.RenewedSelfSigned) != 1 || len(rep.RegeneratedTargets) != 1 {
+		t.Fatalf("unexpected renewal counts: %+v", rep)
+	}
+	if !rep.HookExecuted || rep.HookOutput != "renewed-ok" {
+		t.Fatalf("expected hook output renewed-ok, got %+v", rep)
+	}
+
+	// 2. Store-only renewal mode (spec == nil)
+	storeRep, err := RunRenewalCycle(ctx, s, nil, 72*time.Hour, "")
+	if err != nil {
+		t.Fatalf("RunRenewalCycle(spec=nil): %v", err)
+	}
+	if len(storeRep.RenewedCerts) != 1 || len(storeRep.RenewedSelfSigned) != 1 {
+		t.Fatalf("expected store-only renewal of 1 cert + 1 self-signed, got %+v", storeRep)
+	}
+
+	// 3. GenerateSystemdUnits
+	sysBundle, err := GenerateSystemdUnits(s, SystemdRequest{
+		UnitName:     "mgtls-prod",
+		BinaryPath:   "/usr/local/bin/mgtls",
+		ManifestPath: manifestPath,
+		OnRenewHook:  "systemctl reload caddy",
+	})
+	if err != nil {
+		t.Fatalf("GenerateSystemdUnits: %v", err)
+	}
+	if _, err := os.Stat(sysBundle.ServicePath); err != nil {
+		t.Fatalf("missing service file: %v", err)
+	}
+	if _, err := os.Stat(sysBundle.TimerPath); err != nil {
+		t.Fatalf("missing timer file: %v", err)
+	}
+}
+
+

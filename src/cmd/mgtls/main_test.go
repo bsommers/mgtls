@@ -223,6 +223,14 @@ func TestCLIFlagsHelpVersionAndNegativePaths(t *testing.T) {
 		if errBuf.Len() != 0 {
 			t.Fatalf("expected --quiet to suppress stderr Next steps, got %s", errBuf.String())
 		}
+		// Test watch --once and systemd generate CLI subcommands
+		if _, err := runArgs("--store-dir", storeDir, "watch", "--once", "--renew-before", "1h"); err != nil {
+			t.Fatalf("watch --once failed: %v", err)
+		}
+		sysOut, err := runArgs("--store-dir", storeDir, "systemd", "generate", "--unit-name", "mgtls-test")
+		if err != nil || !strings.Contains(sysOut, "mgtls-test.service") {
+			t.Fatalf("systemd generate failed: err=%v, out=%s", err, sysOut)
+		}
 	}
 
 	// Negative CLI error paths

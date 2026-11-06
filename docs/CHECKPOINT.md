@@ -10,7 +10,8 @@
   5. `/agent-skills:code-review-and-quality`: Completed 5-Axis Code Review (`docs/CODE_REVIEW.md`), remediated store path-traversal boundary (`Store.SafePath`), multi-cert CRL revocation reason preservation (`CertRecord.RevokeReason`), trust-anchor shell sanitization (`sanitizeTrustAnchorName`), and leaf-cert artifact deduplication (`writeLeafCertArtifacts`), reaching `83.2%` statement coverage.
   6. `/release` (`v1.1.1`): Cut patch release `v1.1.1`, synchronized `docs/CHANGELOG.md`, `docs/CAPABILITIES.md`, `docs/capabilities.json`, `README.md`, `docs/index.html`, tagged `v1.1.1`, built 5 cross-platform binaries + `SHA256SUMS`, and published GitHub Release `v1.1.1`.
   7. **Option 1 (Distribution & Onboarding)**: Built `install.sh` (`scripts/install.sh`, `docs/install.sh`), `Dockerfile` (multi-stage `FROM scratch`), `mgtls guide`, `mgtls init --starter --yes`, and `stderr` `Next steps:` breadcrumbs (`--quiet`).
-  8. **Option 2 (14 Target Framework Generators)**: Added 7 new targets (`caddy`, `traefik`, `envoy`, `postgres`, `redis`, `grpc-go`, `nodejs-express`) in `src/pkg/targets/`, updated MCP server & CLI schemas, and verified unit + E2E tests. Remaining Options 3 and 4 saved in `docs/ROADMAP.md`.
+  8. **Option 2 (14 Target Framework Generators)**: Added 7 new targets (`caddy`, `traefik`, `envoy`, `postgres`, `redis`, `grpc-go`, `nodejs-express`) in `src/pkg/targets/`, updated MCP server & CLI schemas, and verified unit + E2E tests.
+  9. **Option 3 (Autonomous Renewal Daemon & `systemd` Units)**: Built `RunRenewalCycle`, `Watch`, and `GenerateSystemdUnits` in `src/pkg/profile/profile.go` plus `mgtls watch` and `mgtls systemd generate` CLI commands in `src/cmd/mgtls/main.go`. Remaining Option 4 saved in `docs/ROADMAP.md`.
 - **Dead Ends:** None.
 - **Working-Tree & Background-Process State:**
   - Clean working tree on branch `main` synced with `origin/main` and tag `v1.1.1`.

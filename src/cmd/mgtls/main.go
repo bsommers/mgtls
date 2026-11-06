@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/sysadmin/mgtls/src/pkg/acme"
 	"github.com/sysadmin/mgtls/src/pkg/mcpserver"
@@ -76,6 +77,10 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return runStatus(storeDir, rest, stdout)
 	case "doctor":
 		return runDoctor(storeDir, rest, stdout, stderr)
+	case "watch":
+		return runWatch(ctx, storeDir, rest, stdout)
+	case "systemd":
+		return runSystemd(storeDir, rest, stdout)
 	case "mcp":
 		return runMCP(ctx, storeDir, rest, stdin, stdout)
 	default:
@@ -117,6 +122,8 @@ Commands:
   apply -f <mgtls.yaml>      Declaratively provision an entire PKI/SSH/ACME/Target fleet from YAML/JSON
   status                     Display store inventory manifest
   doctor                     Audit store health, key permissions, and certificate expirations
+  watch                      Autonomous renewal loop (monitors expirations, re-issues certs, runs --on-renew hooks)
+  systemd generate           Generate systemd .service & .timer units for unattended renewal
   mcp serve                  Run the Model Context Protocol (MCP) JSON-RPC 2.0 server (stdio or HTTP/mTLS)
   guide                      View the full end-to-end onboarding & workflow guide
   version                    Print version
@@ -993,4 +1000,71 @@ func runMCP(ctx context.Context, defaultStoreDir string, args []string, stdin io
 	default:
 		return fmt.Errorf("unsupported mcp transport %q (expected stdio or http)", *transport)
 	}
+}
+
+func runWatch(ctx context.Context, defaultStoreDir string, args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("watch", flag.ContinueOnError)
+	storeDir := fs.String("store-dir", defaultStoreDir, "Store directory")
+	file := fs.String("f", "", "Optional declarative YAML/JSON manifest (mgtls.yaml)")
+	manifestFlag := fs.String("manifest", "", "Alias for -f")
+	interval := fs.Duration("interval", 12*time.Hour, "Check interval (e.g. 12h, 1h, 5m)")
+	renewBefore := fs.Duration("renew-before", 720*time.Hour, "Renew certificates expiring within this duration (default 720h = 30d)")
+	onRenew := fs.String("on-renew", "", "Shell command hook to execute when any certificate is renewed")
+	once := fs.Bool("once", false, "Run a single renewal pass and exit")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	manifestPath := *file
+	if manifestPath == "" {
+		manifestPath = *manifestFlag
+	}
+	s, err := store.New(*storeDir)
+	if err != nil {
+		return err
+	}
+	return profile.Watch(ctx, s, profile.WatchOptions{
+		ManifestPath: manifestPath,
+		Interval:     *interval,
+		RenewBefore:  *renewBefore,
+		OnRenewHook:  *onRenew,
+		Once:         *once,
+	}, func(rep *profile.RenewalCycleReport) {
+		_ = writeJSON(stdout, rep)
+	})
+}
+
+func runSystemd(defaultStoreDir string, args []string, stdout io.Writer) error {
+	if len(args) > 0 && args[0] == "generate" {
+		args = args[1:]
+	}
+	fs := flag.NewFlagSet("systemd generate", flag.ContinueOnError)
+	storeDir := fs.String("store-dir", defaultStoreDir, "Store directory")
+	unitName := fs.String("unit-name", "mgtls-renew", "systemd unit base name")
+	binPath := fs.String("binary-path", "/usr/local/bin/mgtls", "Path to mgtls binary")
+	manifestPath := fs.String("manifest", "", "Optional path to mgtls.yaml")
+	calendar := fs.String("calendar", "*-*-* 00,12:00:00", "systemd OnCalendar schedule")
+	renewBefore := fs.String("renew-before", "720h", "Renew window duration (e.g. 720h)")
+	onRenew := fs.String("on-renew", "", "Optional reload command hook on renewal")
+	outDir := fs.String("out", "", "Output directory for .service and .timer files")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	s, err := store.New(*storeDir)
+	if err != nil {
+		return err
+	}
+	bundle, err := profile.GenerateSystemdUnits(s, profile.SystemdRequest{
+		UnitName:     *unitName,
+		BinaryPath:   *binPath,
+		ManifestPath: *manifestPath,
+		StoreDir:     s.BaseDir,
+		Calendar:     *calendar,
+		RenewBefore:  *renewBefore,
+		OnRenewHook:  *onRenew,
+		OutputDir:    *outDir,
+	})
+	if err != nil {
+		return err
+	}
+	return writeJSON(stdout, bundle)
 }
