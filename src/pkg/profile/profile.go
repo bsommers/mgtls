@@ -409,7 +409,10 @@ func RunDoctor(s *store.Store, warnDays int) (*DoctorReport, error) {
 
 	for _, ca := range m.CAs {
 		certOK := checkPublicFile("ca", ca.Name, "CA certificate", ca.CertPath)
-		keyOK := checkKeyFile("ca", ca.Name, ca.KeyPath)
+		keyOK := true
+		if ca.KeyPath != "" {
+			keyOK = checkKeyFile("ca", ca.Name, ca.KeyPath)
+		}
 		if !ca.NotAfter.After(now) {
 			addFinding(DoctorFinding{
 				Severity: "error",
@@ -470,7 +473,10 @@ func RunDoctor(s *store.Store, warnDays int) (*DoctorReport, error) {
 
 	for _, ca := range m.SSHCAs {
 		pubOK := checkPublicFile("ssh_ca", ca.Name, "SSH CA public key", ca.PubKeyPath)
-		privOK := checkKeyFile("ssh_ca", ca.Name, ca.PrivKeyPath)
+		privOK := true
+		if ca.PrivKeyPath != "" {
+			privOK = checkKeyFile("ssh_ca", ca.Name, ca.PrivKeyPath)
+		}
 		if pubOK && privOK {
 			addFinding(DoctorFinding{
 				Severity: "ok",

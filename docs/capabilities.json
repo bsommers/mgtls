@@ -6,9 +6,9 @@
   "homepage": "https://bsommers.github.io/mgtls/",
   "summary": {
     "total_capabilities": 9,
-    "operational": 8,
+    "operational": 9,
     "beta": 0,
-    "planned": 1
+    "planned": 0
   },
   "capabilities": [
     {
@@ -77,11 +77,11 @@
     },
     {
       "id": "CAP-HSM-001",
-      "name": "PKCS#11 & YubiKey PIV Hardware Security Module (HSM) Root CA Signing",
-      "status": "planned",
-      "target_release": "1.2.0",
+      "name": "Hardware-Backed Root CA, KMS & ssh-agent Signer Seams (crypto.Signer & ssh.Signer)",
+      "status": "operational",
+      "since": "1.2.0",
       "package": "src/pkg/pki",
-      "verification": "planned"
+      "verification": "go test -race ./src/pkg/pki ./src/pkg/sshca"
     }
   ]
 }

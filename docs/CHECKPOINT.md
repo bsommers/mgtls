@@ -11,7 +11,8 @@
   6. `/release` (`v1.1.1`): Cut patch release `v1.1.1`, synchronized `docs/CHANGELOG.md`, `docs/CAPABILITIES.md`, `docs/capabilities.json`, `README.md`, `docs/index.html`, tagged `v1.1.1`, built 5 cross-platform binaries + `SHA256SUMS`, and published GitHub Release `v1.1.1`.
   7. **Option 1 (Distribution & Onboarding)**: Built `install.sh` (`scripts/install.sh`, `docs/install.sh`), `Dockerfile` (multi-stage `FROM scratch`), `mgtls guide`, `mgtls init --starter --yes`, and `stderr` `Next steps:` breadcrumbs (`--quiet`).
   8. **Option 2 (14 Target Framework Generators)**: Added 7 new targets (`caddy`, `traefik`, `envoy`, `postgres`, `redis`, `grpc-go`, `nodejs-express`) in `src/pkg/targets/`, updated MCP server & CLI schemas, and verified unit + E2E tests.
-  9. **Option 3 (Autonomous Renewal Daemon & `systemd` Units)**: Built `RunRenewalCycle`, `Watch`, and `GenerateSystemdUnits` in `src/pkg/profile/profile.go` plus `mgtls watch` and `mgtls systemd generate` CLI commands in `src/cmd/mgtls/main.go`. Remaining Option 4 saved in `docs/ROADMAP.md`.
+  9. **Option 3 (Autonomous Renewal Daemon & `systemd` Units)**: Built `RunRenewalCycle`, `Watch`, and `GenerateSystemdUnits` in `src/pkg/profile/profile.go` plus `mgtls watch` and `mgtls systemd generate` CLI commands in `src/cmd/mgtls/main.go`.
+  10. **Option 4 (Hardware-Backed Root CA, KMS & `ssh-agent` Signer Seams — `CAP-HSM-001`)**: Implemented `crypto.Signer` and `ssh.Signer` hardware/KMS seams in `src/pkg/pki/pki.go` and `src/pkg/sshca/sshca.go` plus `SSH_AUTH_SOCK` (`--agent-socket`) support, achieving 9/9 (`100%`) operational capabilities in `docs/CAPABILITIES.md`.
 - **Dead Ends:** None.
 - **Working-Tree & Background-Process State:**
   - Clean working tree on branch `main` synced with `origin/main` and tag `v1.1.1`.

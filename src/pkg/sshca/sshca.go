@@ -18,13 +18,16 @@ import (
 
 	"github.com/sysadmin/mgtls/src/pkg/store"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
+	"net"
 )
 
 type SSHCARequest struct {
-	Name      string `json:"name" yaml:"name"`
-	CAType    string `json:"ca_type" yaml:"ca_type"`                         // "user" or "host"
-	Algorithm string `json:"algorithm,omitempty" yaml:"algorithm,omitempty"` // "ed25519" (default), "ecdsa-p256", "rsa-4096"
-	Comment   string `json:"comment,omitempty" yaml:"comment,omitempty"`
+	Name      string     `json:"name" yaml:"name"`
+	CAType    string     `json:"ca_type" yaml:"ca_type"`                         // "user" or "host"
+	Algorithm string     `json:"algorithm,omitempty" yaml:"algorithm,omitempty"` // "ed25519" (default), "ecdsa-p256", "rsa-4096"
+	Comment   string     `json:"comment,omitempty" yaml:"comment,omitempty"`
+	Signer    ssh.Signer `json:"-" yaml:"-"` // optional hardware/agent/KMS signer (private key never written to disk)
 }
 
 type SSHCAResult struct {
@@ -42,6 +45,8 @@ type SignSSHRequest struct {
 	ExistingPubKey  string            `json:"existing_pub_key,omitempty" yaml:"existing_pub_key,omitempty"` // optional path to existing .pub
 	CriticalOptions map[string]string `json:"critical_options,omitempty" yaml:"critical_options,omitempty"`
 	Extensions      map[string]string `json:"extensions,omitempty" yaml:"extensions,omitempty"`
+	CASigner        ssh.Signer        `json:"-" yaml:"-"` // optional hardware/agent/KMS CA signer
+	AgentSocket     string            `json:"agent_socket,omitempty" yaml:"agent_socket,omitempty"` // optional SSH_AUTH_SOCK path for hardware/agent CA signing
 }
 
 type SignSSHResult struct {
@@ -89,20 +94,21 @@ func generateSSHKeyPair(alg, comment string) (crypto.PrivateKey, ssh.PublicKey, 
 
 	var priv crypto.PrivateKey
 	switch normAlg {
-	case "ed25519":
+	case "ed25519", "ssh-ed25519":
+		normAlg = "ed25519"
 		_, k, err := ed25519.GenerateKey(rand.Reader)
 		if err != nil {
 			return nil, nil, nil, nil, "", fmt.Errorf("generate ed25519 key: %w", err)
 		}
 		priv = k
-	case "ecdsa-p256", "ecdsa":
+	case "ecdsa-p256", "ecdsa", "ecdsa-sha2-nistp256":
 		normAlg = "ecdsa-p256"
 		k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		if err != nil {
 			return nil, nil, nil, nil, "", fmt.Errorf("generate ecdsa-p256 key: %w", err)
 		}
 		priv = k
-	case "rsa-4096", "rsa":
+	case "rsa-4096", "rsa", "ssh-rsa", "rsa-sha2-256", "rsa-sha2-512":
 		normAlg = "rsa-4096"
 		k, err := rsa.GenerateKey(rand.Reader, 4096)
 		if err != nil {
@@ -156,17 +162,36 @@ func CreateSSHCA(s *store.Store, req SSHCARequest) (*SSHCAResult, error) {
 		comment = fmt.Sprintf("mgtls-%s-ca-%s", caType, req.Name)
 	}
 
-	_, sshPub, privBytes, pubBytes, normAlg, err := generateSSHKeyPair(req.Algorithm, comment)
-	if err != nil {
-		return nil, err
+	var (
+		sshPub    ssh.PublicKey
+		privBytes []byte
+		pubBytes  []byte
+		normAlg   string
+		err       error
+	)
+	if req.Signer != nil {
+		sshPub = req.Signer.PublicKey()
+		pubBytes = formatAuthorizedKeyWithComment(sshPub, comment)
+		normAlg = req.Algorithm
+		if normAlg == "" {
+			normAlg = sshPub.Type()
+		}
+	} else {
+		_, sshPub, privBytes, pubBytes, normAlg, err = generateSSHKeyPair(req.Algorithm, comment)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	privRel := filepath.Join("ssh", "ca", req.Name, "id_ca")
 	pubRel := filepath.Join("ssh", "ca", req.Name, "id_ca.pub")
 
-	privPath, err := s.WriteKey(privRel, privBytes)
-	if err != nil {
-		return nil, err
+	var privPath string
+	if len(privBytes) > 0 {
+		privPath, err = s.WriteKey(privRel, privBytes)
+		if err != nil {
+			return nil, err
+		}
 	}
 	pubPath, err := s.WritePublic(pubRel, pubBytes)
 	if err != nil {
@@ -202,13 +227,38 @@ func SignSSHCert(s *store.Store, req SignSSHRequest) (*SignSSHResult, error) {
 		return nil, err
 	}
 
-	caPrivRaw, err := os.ReadFile(caRec.PrivKeyPath)
-	if err != nil {
-		return nil, fmt.Errorf("read SSH CA private key: %w", err)
-	}
-	caSigner, err := ssh.ParsePrivateKey(caPrivRaw)
-	if err != nil {
-		return nil, fmt.Errorf("parse SSH CA private key: %w", err)
+	var caSigner ssh.Signer
+	if req.CASigner != nil {
+		caSigner = req.CASigner
+	} else if strings.TrimSpace(req.AgentSocket) != "" {
+		conn, dErr := net.Dial("unix", strings.TrimSpace(req.AgentSocket))
+		if dErr != nil {
+			return nil, fmt.Errorf("connect ssh-agent socket %s: %w", req.AgentSocket, dErr)
+		}
+		defer conn.Close()
+		ag := agent.NewClient(conn)
+		signers, sErr := ag.Signers()
+		if sErr != nil {
+			return nil, fmt.Errorf("list ssh-agent signers: %w", sErr)
+		}
+		for _, sg := range signers {
+			if ssh.FingerprintSHA256(sg.PublicKey()) == caRec.Fingerprint {
+				caSigner = sg
+				break
+			}
+		}
+		if caSigner == nil {
+			return nil, fmt.Errorf("no signer in ssh-agent matching CA %q fingerprint %s", req.CAName, caRec.Fingerprint)
+		}
+	} else {
+		caPrivRaw, rErr := os.ReadFile(caRec.PrivKeyPath)
+		if rErr != nil {
+			return nil, fmt.Errorf("read SSH CA private key: %w", rErr)
+		}
+		caSigner, err = ssh.ParsePrivateKey(caPrivRaw)
+		if err != nil {
+			return nil, fmt.Errorf("parse SSH CA private key: %w", err)
+		}
 	}
 
 	certType := strings.ToLower(strings.TrimSpace(req.CertType))

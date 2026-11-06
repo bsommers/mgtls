@@ -29,13 +29,15 @@ import (
 )
 
 type CARequest struct {
-	Name         string `json:"name" yaml:"name"`
-	CommonName   string `json:"common_name" yaml:"common_name"`
-	Organization string `json:"organization,omitempty" yaml:"organization,omitempty"`
-	Country      string `json:"country,omitempty" yaml:"country,omitempty"`
-	ParentCA     string `json:"parent_ca,omitempty" yaml:"parent_ca,omitempty"` // empty = Root CA, non-empty = Intermediate CA signed by ParentCA
-	Algorithm    string `json:"algorithm,omitempty" yaml:"algorithm,omitempty"` // ed25519 (default), ecdsa-p256, ecdsa-p384, rsa-2048, rsa-4096
-	ValidDays    int    `json:"valid_days,omitempty" yaml:"valid_days,omitempty"` // default 3650 for root, 1825 for intermediate
+	Name         string        `json:"name" yaml:"name"`
+	CommonName   string        `json:"common_name" yaml:"common_name"`
+	Organization string        `json:"organization,omitempty" yaml:"organization,omitempty"`
+	Country      string        `json:"country,omitempty" yaml:"country,omitempty"`
+	ParentCA     string        `json:"parent_ca,omitempty" yaml:"parent_ca,omitempty"` // empty = Root CA, non-empty = Intermediate CA signed by ParentCA
+	Algorithm    string        `json:"algorithm,omitempty" yaml:"algorithm,omitempty"` // ed25519 (default), ecdsa-p256, ecdsa-p384, rsa-2048, rsa-4096
+	ValidDays    int           `json:"valid_days,omitempty" yaml:"valid_days,omitempty"` // default 3650 for root, 1825 for intermediate
+	Signer       crypto.Signer `json:"-" yaml:"-"`                                       // optional hardware/KMS/HSM signer seam (private key never written to disk)
+	ParentSigner crypto.Signer `json:"-" yaml:"-"`                                       // optional hardware/KMS/HSM signer for ParentCA
 }
 
 type CAResult struct {
@@ -43,16 +45,17 @@ type CAResult struct {
 }
 
 type CertRequest struct {
-	Name        string   `json:"name" yaml:"name"`
-	CommonName  string   `json:"common_name" yaml:"common_name"`
-	CAName      string   `json:"ca_name" yaml:"ca_name"`
-	Role        string   `json:"role,omitempty" yaml:"role,omitempty"`             // server, client, mtls (default: mtls)
-	Algorithm   string   `json:"algorithm,omitempty" yaml:"algorithm,omitempty"`   // ed25519 (default), ecdsa-p256, ecdsa-p384, rsa-2048, rsa-4096
-	ValidDays   int      `json:"valid_days,omitempty" yaml:"valid_days,omitempty"` // default 365
-	DNSNames    []string `json:"dns_names,omitempty" yaml:"dns_names,omitempty"`
-	IPAddresses []string `json:"ip_addresses,omitempty" yaml:"ip_addresses,omitempty"`
-	URIs        []string `json:"uris,omitempty" yaml:"uris,omitempty"`
-	Emails      []string `json:"emails,omitempty" yaml:"emails,omitempty"`
+	Name        string        `json:"name" yaml:"name"`
+	CommonName  string        `json:"common_name" yaml:"common_name"`
+	CAName      string        `json:"ca_name" yaml:"ca_name"`
+	Role        string        `json:"role,omitempty" yaml:"role,omitempty"`             // server, client, mtls (default: mtls)
+	Algorithm   string        `json:"algorithm,omitempty" yaml:"algorithm,omitempty"`   // ed25519 (default), ecdsa-p256, ecdsa-p384, rsa-2048, rsa-4096
+	ValidDays   int           `json:"valid_days,omitempty" yaml:"valid_days,omitempty"` // default 365
+	DNSNames    []string      `json:"dns_names,omitempty" yaml:"dns_names,omitempty"`
+	IPAddresses []string      `json:"ip_addresses,omitempty" yaml:"ip_addresses,omitempty"`
+	URIs        []string      `json:"uris,omitempty" yaml:"uris,omitempty"`
+	Emails      []string      `json:"emails,omitempty" yaml:"emails,omitempty"`
+	CASigner    crypto.Signer `json:"-" yaml:"-"` // optional hardware/KMS/HSM signer for the issuing CA
 }
 
 type SelfSignedRequest struct {
@@ -286,9 +289,18 @@ func CreateCA(s *store.Store, req CARequest) (*CAResult, error) {
 		}
 	}
 
-	signer, keyPEM, normAlg, err := generateKeyPair(req.Algorithm)
-	if err != nil {
-		return nil, err
+	var signer crypto.Signer
+	var keyPEM []byte
+	var normAlg string
+	var err error
+	if req.Signer != nil {
+		signer = req.Signer
+		normAlg = normalizeAlgorithm(req.Algorithm)
+	} else {
+		signer, keyPEM, normAlg, err = generateKeyPair(req.Algorithm)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	serial, err := randomSerial()
@@ -349,9 +361,24 @@ func CreateCA(s *store.Store, req CARequest) (*CAResult, error) {
 		if err != nil {
 			return nil, fmt.Errorf("get parent CA %q: %w", req.ParentCA, err)
 		}
-		parentCert, parentSigner, err := loadCertAndKey(parentRec.CertPath, parentRec.KeyPath)
-		if err != nil {
-			return nil, fmt.Errorf("load parent CA %q: %w", req.ParentCA, err)
+		var parentCert *x509.Certificate
+		var parentSigner crypto.Signer
+		if req.ParentSigner != nil {
+			certRaw, rErr := os.ReadFile(parentRec.CertPath)
+			if rErr != nil {
+				return nil, fmt.Errorf("read parent CA cert %q: %w", req.ParentCA, rErr)
+			}
+			certs, pErr := parseCertsFromBytes(certRaw)
+			if pErr != nil || len(certs) == 0 {
+				return nil, fmt.Errorf("parse parent CA cert %q: %w", req.ParentCA, pErr)
+			}
+			parentCert = certs[0]
+			parentSigner = req.ParentSigner
+		} else {
+			parentCert, parentSigner, err = loadCertAndKey(parentRec.CertPath, parentRec.KeyPath)
+			if err != nil {
+				return nil, fmt.Errorf("load parent CA %q: %w", req.ParentCA, err)
+			}
 		}
 		tmpl.AuthorityKeyId = parentCert.SubjectKeyId
 		certDER, err = x509.CreateCertificate(rand.Reader, tmpl, parentCert, signer.Public(), parentSigner)
@@ -395,9 +422,12 @@ func CreateCA(s *store.Store, req CARequest) (*CAResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	keyPath, err := s.WriteKey(filepath.Join(relDir, "key.pem"), keyPEM)
-	if err != nil {
-		return nil, err
+	var keyPath string
+	if len(keyPEM) > 0 {
+		keyPath, err = s.WriteKey(filepath.Join(relDir, "key.pem"), keyPEM)
+		if err != nil {
+			return nil, err
+		}
 	}
 	chainPath, err := s.WritePublic(filepath.Join(relDir, "chain.pem"), chainPEM)
 	if err != nil {
@@ -564,9 +594,24 @@ func IssueCert(s *store.Store, req CertRequest) (*CertResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	caCert, caSigner, err := loadCertAndKey(caRec.CertPath, caRec.KeyPath)
-	if err != nil {
-		return nil, fmt.Errorf("load signing CA %q: %w", req.CAName, err)
+	var caCert *x509.Certificate
+	var caSigner crypto.Signer
+	if req.CASigner != nil {
+		certRaw, rErr := os.ReadFile(caRec.CertPath)
+		if rErr != nil {
+			return nil, fmt.Errorf("read signing CA cert %q: %w", req.CAName, rErr)
+		}
+		certs, pErr := parseCertsFromBytes(certRaw)
+		if pErr != nil || len(certs) == 0 {
+			return nil, fmt.Errorf("parse signing CA cert %q: %w", req.CAName, pErr)
+		}
+		caCert = certs[0]
+		caSigner = req.CASigner
+	} else {
+		caCert, caSigner, err = loadCertAndKey(caRec.CertPath, caRec.KeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("load signing CA %q: %w", req.CAName, err)
+		}
 	}
 	caChainPEM, err := os.ReadFile(caRec.ChainPath)
 	if err != nil {

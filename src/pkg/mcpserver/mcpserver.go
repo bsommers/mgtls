@@ -362,6 +362,7 @@ func (srv *Server) listTools() []mcpTool {
 					"valid_hours":      map[string]any{"type": "integer"},
 					"algorithm":        map[string]any{"type": "string"},
 					"existing_pub_key": map[string]any{"type": "string"},
+					"agent_socket":     map[string]any{"type": "string", "description": "Optional SSH_AUTH_SOCK path for hardware/ssh-agent CA signing"},
 				},
 				"required": []string{"name", "ca_name"},
 			},

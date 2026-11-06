@@ -593,6 +593,7 @@ func runSSH(defaultStoreDir string, args []string, stdout io.Writer) error {
 		hours := fs.Int("hours", 0, "Validity in hours")
 		algo := fs.String("algo", "ed25519", "Key algorithm if generating new keypair")
 		pubKey := fs.String("pub-key", "", "Optional existing .pub file to sign")
+		agentSock := fs.String("agent-socket", "", "Optional SSH_AUTH_SOCK path for hardware/ssh-agent CA signing")
 		if err := fs.Parse(rest); err != nil {
 			return err
 		}
@@ -616,6 +617,7 @@ func runSSH(defaultStoreDir string, args []string, stdout io.Writer) error {
 			ValidHours:     *hours,
 			Algorithm:      *algo,
 			ExistingPubKey: *pubKey,
+			AgentSocket:    *agentSock,
 		})
 		if err != nil {
 			return err

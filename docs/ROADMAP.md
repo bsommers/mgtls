@@ -1,7 +1,6 @@
 # `mgtls` Forward Roadmap & Next Options (`v1.2.0+`)
 
-> **Status**: Option 1 (Distribution & Zero-Friction Onboarding), Option 2 (14 Target Framework Generators), and Option 3 (Autonomous Renewal Daemon & `systemd` Generator) are **COMPLETED**.  
-> Option 4 (Hardware-Backed Root CA & YubiKey / KMS Support) is preserved below for selection and execution next.
+> **Status**: All 4 Roadmap Options (Option 1: Distribution & Onboarding, Option 2: 14 Target Framework Generators, Option 3: Autonomous Renewal Daemon & `systemd` Generator, and Option 4: Hardware-Backed Root CA / KMS / `ssh-agent` Signer Seams) are **100% COMPLETED**.
 
 ---
 
@@ -47,7 +46,8 @@ Added continuous lifecycle automation in `src/pkg/profile/profile.go` (`RunRenew
 
 ---
 
-### [ ] Option 4: Hardware-Backed Root CA & YubiKey / KMS Support (`CAP-HSM-001`)
-Implement the planned capability from [`docs/CAPABILITIES.md`](CAPABILITIES.md):
-1. **Pluggable `crypto.Signer` Seam (`src/pkg/pki`, `src/pkg/sshca`)**:
-   - Support signing X.509 Intermediate/Leaf certificates and OpenSSH User/Host certificates via `SSH_AUTH_SOCK` (`ssh-agent`), PKCS#11 modules (`softhsm2` / YubiKey PIV), or external KMS hooks so Root CA private keys never touch disk.
+### [x] Option 4: Hardware-Backed Root CA & YubiKey / KMS Support (`CAP-HSM-001` — `COMPLETED`)
+Implemented the planned capability from [`docs/CAPABILITIES.md`](CAPABILITIES.md):
+1. **Pluggable `crypto.Signer` & `ssh.Signer` Seams (`src/pkg/pki`, `src/pkg/sshca`)**:
+   - `pki.CARequest.Signer`, `pki.CARequest.ParentSigner`, and `pki.CertRequest.CASigner` accept any `crypto.Signer` (PKCS#11, YubiKey PIV, KMS, or custom hardware token) without writing CA private keys to disk.
+   - `sshca.SSHCARequest.Signer`, `sshca.SignSSHRequest.CASigner`, and `sshca.SignSSHRequest.AgentSocket` (`--agent-socket` / `SSH_AUTH_SOCK`) sign OpenSSH User and Host certificates directly via hardware-backed `ssh-agent` keys.

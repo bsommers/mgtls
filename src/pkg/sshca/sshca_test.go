@@ -12,6 +12,7 @@ import (
 
 	"github.com/sysadmin/mgtls/src/pkg/store"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 )
 
 func TestSSHCALifecycleAndCertVerification(t *testing.T) {
@@ -331,5 +332,63 @@ func TestSSHCALifecycleAndCertVerification(t *testing.T) {
 	// GenerateSSHConfigBundle with default OutputDir
 	if _, err := GenerateSSHConfigBundle(st, SSHConfigRequest{Name: "default-dir-bundle", UserCAName: "prod-user-ca"}); err != nil {
 		t.Fatalf("GenerateSSHConfigBundle default dir: %v", err)
+	}
+
+	// 9. Hardware / ssh-agent Signer seam (CA private key never written to disk)
+	_, hwSSHPriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey hwSSHPriv: %v", err)
+	}
+	hwSSHSigner, err := ssh.NewSignerFromKey(hwSSHPriv)
+	if err != nil {
+		t.Fatalf("NewSignerFromKey: %v", err)
+	}
+	hwSSHCARes, err := CreateSSHCA(st, SSHCARequest{
+		Name:   "hw-ssh-ca",
+		CAType: "user",
+		Signer: hwSSHSigner,
+	})
+	if err != nil {
+		t.Fatalf("CreateSSHCA with hardware Signer: %v", err)
+	}
+	if hwSSHCARes.Record.PrivKeyPath != "" {
+		t.Fatalf("expected empty PrivKeyPath for hardware-backed SSH CA, got %q", hwSSHCARes.Record.PrivKeyPath)
+	}
+
+	// Start in-memory ssh-agent over UNIX domain socket
+	sockPath := filepath.Join(tmpDir, "agent.sock")
+	ln, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatalf("listen unix agent.sock: %v", err)
+	}
+	defer ln.Close()
+	keyring := agent.NewKeyring()
+	if err := keyring.Add(agent.AddedKey{PrivateKey: hwSSHPriv, Comment: "hw-ssh-ca"}); err != nil {
+		t.Fatalf("keyring.Add: %v", err)
+	}
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				_ = agent.ServeAgent(keyring, c)
+			}(conn)
+		}
+	}()
+
+	agentSignedRes, err := SignSSHCert(st, SignSSHRequest{
+		Name:        "agent-signed-user",
+		CAName:      "hw-ssh-ca",
+		Principals:  []string{"sre"},
+		AgentSocket: sockPath,
+	})
+	if err != nil {
+		t.Fatalf("SignSSHCert via AgentSocket failed: %v", err)
+	}
+	if _, err := InspectSSHCert(agentSignedRes.Record.CertPath); err != nil {
+		t.Fatalf("InspectSSHCert on agent-signed cert failed: %v", err)
 	}
 }

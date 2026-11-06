@@ -1,6 +1,8 @@
 package pki
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -572,6 +574,37 @@ func TestPKINegativeAndEdgeCases(t *testing.T) {
 	parsedCRL, err := parseCRLFromBytes(crlMultiRaw)
 	if err != nil || len(parsedCRL.RevokedCertificateEntries) < 2 {
 		t.Fatalf("parse multi CRL: %+v, err=%v", parsedCRL, err)
+	}
+
+	// 7. Hardware/KMS crypto.Signer seam (Root CA + Intermediate CA + Leaf Cert without writing CA private key to disk)
+	_, hwPriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey hwPriv: %v", err)
+	}
+	hwCARes, err := CreateCA(s, CARequest{
+		Name:       "hw-root-ca",
+		CommonName: "Hardware Token Root CA",
+		Algorithm:  "ed25519",
+		Signer:     hwPriv,
+	})
+	if err != nil {
+		t.Fatalf("CreateCA with hardware Signer: %v", err)
+	}
+	if hwCARes.Record.KeyPath != "" {
+		t.Fatalf("expected empty KeyPath for hardware-backed Root CA, got %q", hwCARes.Record.KeyPath)
+	}
+	hwLeafRes, err := IssueCert(s, CertRequest{
+		Name:       "hw-signed-leaf",
+		CommonName: "hw.internal",
+		CAName:     "hw-root-ca",
+		CASigner:   hwPriv,
+	})
+	if err != nil {
+		t.Fatalf("IssueCert with hardware CASigner: %v", err)
+	}
+	vHW, err := VerifyChain(hwLeafRes.Record.CertPath, hwCARes.Record.CertPath, "", "hw.internal", "mtls")
+	if err != nil || !vHW.Valid {
+		t.Fatalf("VerifyChain for hardware-signed leaf failed: %+v, err=%v", vHW, err)
 	}
 }
 
