@@ -1,14 +1,14 @@
 {
   "schema_version": "1.1.0",
   "project": "mgtls",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "repository": "https://github.com/bsommers/mgtls",
   "homepage": "https://bsommers.github.io/mgtls/",
   "summary": {
-    "total_capabilities": 9,
-    "operational": 9,
+    "total_capabilities": 12,
+    "operational": 11,
     "beta": 0,
-    "planned": 0
+    "planned": 1
   },
   "capabilities": [
     {
@@ -69,11 +69,27 @@
     },
     {
       "id": "CAP-TEST-001",
-      "name": "End-to-End Examples, Cookbooks & Shell Test-Quality Verification Suite (83.1% Coverage)",
+      "name": "End-to-End Examples, Cookbooks & Shell Test-Quality Verification Suite (83.2%+ Coverage)",
       "status": "operational",
       "since": "1.1.0",
       "package": "src/test/e2e",
       "verification": "go test -v -race ./src/test/e2e"
+    },
+    {
+      "id": "CAP-DIST-001",
+      "name": "Multi-Target Installer (install.sh), Scratch Container (Dockerfile), Onboarding Guide & Starter Wizard (mgtls guide, mgtls init --starter)",
+      "status": "operational",
+      "since": "1.2.0",
+      "package": "install.sh",
+      "verification": "go test -race ./src/cmd/mgtls"
+    },
+    {
+      "id": "CAP-WATCH-001",
+      "name": "Autonomous Certificate Renewal Daemon (mgtls watch), --on-renew Hooks & systemd Unit/Timer Generator (mgtls systemd generate)",
+      "status": "operational",
+      "since": "1.2.0",
+      "package": "src/pkg/profile",
+      "verification": "go test -race ./src/pkg/profile"
     },
     {
       "id": "CAP-HSM-001",
@@ -82,6 +98,13 @@
       "since": "1.2.0",
       "package": "src/pkg/pki",
       "verification": "go test -race ./src/pkg/pki ./src/pkg/sshca"
+    },
+    {
+      "id": "CAP-OCSP-001",
+      "name": "RFC 6960 OCSP Responder & Stapling Verification Engine",
+      "status": "planned",
+      "target_version": "1.3.0",
+      "package": "src/pkg/pki"
     }
   ]
 }

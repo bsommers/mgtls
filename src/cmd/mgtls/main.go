@@ -19,7 +19,7 @@ import (
 	"github.com/sysadmin/mgtls/src/pkg/targets"
 )
 
-const Version = "1.1.1"
+const Version = "1.2.0"
 
 func main() {
 	if err := run(context.Background(), os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil {

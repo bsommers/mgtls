@@ -5,6 +5,25 @@ All notable changes to `mgtls` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-11-06
+
+### Added
+- **Multi-Target Installer, Container Image & Onboarding (`install.sh`, `Dockerfile`, `src/cmd/mgtls/main.go` — `CAP-DIST-001`)**:
+  - Added multi-target installer script (`install.sh`, `scripts/install.sh`, `docs/install.sh`) supporting `--local` (`~/.local`), `--global` (`/usr/local`), `--prefix DIR`, `--copy`, `--from-release`, `--dry-run`, `--uninstall`, `--force`, and `-h/--help`.
+  - Added multi-stage zero-CGO scratch container `Dockerfile` (`FROM golang:1.26-alpine` -> `FROM scratch` with non-root user `65532:65532`).
+  - Added `mgtls guide` (`--json`) interactive workflow cheat sheet, `mgtls init --starter --yes` (`-y`, `--force`, `--quiet`) starter manifest scaffolder, and contextual `Next steps:` breadcrumbs on `stderr`.
+- **7 New Target Framework & Infrastructure Generators (`src/pkg/targets` — 14 Total Targets — `CAP-TARGETS-001`)**:
+  - Expanded `mgtls target generate --target <name>` from 7 to **14 targets** by adding **Caddy**, **Traefik**, **Envoy Proxy (xDS SDS)**, **PostgreSQL (`pg_hba.conf` `clientcert=verify-full`)**, **Redis (`tls-auth-clients yes`)**, **gRPC-Go**, and **Node.js / Express**.
+- **Autonomous Certificate Renewal Daemon & `systemd` Generator (`src/pkg/profile/profile.go`, `src/cmd/mgtls/main.go` — `CAP-WATCH-001`)**:
+  - Added `mgtls watch` (`--manifest`, `--renew-before`, `--interval`, `--on-renew`, `--once`, `--json`) to continuously monitor and rotate expiring X.509 leaf certificates and execute reload hooks (`MGTLS_RENEWED_CERTS`, `MGTLS_RENEWED_COUNT`).
+  - Added `mgtls systemd generate` (`--mode timer|daemon`, `--output`, `--manifest`, `--store-dir`, `--binary`, `--user`, `--on-renew`) to scaffold hardened `mgtls-renew.service` and `mgtls-renew.timer` units.
+- **Hardware-Backed Root CA, KMS & `ssh-agent` Signer Seams (`src/pkg/pki/pki.go`, `src/pkg/sshca/sshca.go` — `CAP-HSM-001`)**:
+  - Extended `pki.CARequest` (`Signer`, `ParentSigner`) and `pki.CertRequest` (`CASigner`) to accept external `crypto.Signer` implementations (YubiKey PIV, PKCS#11 HSM, Cloud KMS) without persisting CA private keys to disk.
+  - Extended `sshca.SSHCARequest` (`Signer`) and `sshca.SignSSHRequest` (`CASigner`, `AgentSocket`) plus CLI flag `mgtls ssh-ca sign --agent-socket` (`SSH_AUTH_SOCK`) to sign OpenSSH user and host certificates via a live `ssh-agent`.
+
+### Verification Telemetry
+- **Static Analysis & Full Test Suite**: `go vet ./src/...` (`0` warnings), `go test -race ./src/...` (`9/9` packages passing, 60+ test functions & subtests), and `bash tests/run_all.sh` (`100%` pass across all unit, integration, and 14 shell E2E suites).
+
 ## [1.1.1] - 2026-11-05
 
 ### Security
