@@ -101,7 +101,7 @@ Legend:  ████ 100% (Full Native)   ▓▓░░ 50% (Partial / Plugin / 
 
 ## About
 
-`mgtls` is a zero-CGO (`CGO_ENABLED=0`), single-binary Go 1.26 cryptographic authority, certificate lifecycle engine, and **Model Context Protocol (MCP)** server (`mgtls mcp serve`) built for developers, platform engineers, and autonomous AI agents. It unifies local multi-tier X.509 PKI, mutual TLS (mTLS), OpenSSH User & Host Certificate Authorities, free public RFC 8555 ACME v2 encryption, and drop-in configuration generation across 7 target platforms (`FastAPI`, `Spring Boot 3`, `MCP Server`, `NGINX`, `Vite`, `Proxmox VE`, and `OpenSSH`):
+`mgtls` is a zero-CGO (`CGO_ENABLED=0`), single-binary Go 1.26 cryptographic authority, certificate lifecycle engine, and **Model Context Protocol (MCP)** server (`mgtls mcp serve`) built for developers, platform engineers, and autonomous AI agents. It unifies local multi-tier X.509 PKI, mutual TLS (mTLS), OpenSSH User & Host Certificate Authorities, free public RFC 8555 ACME v2 encryption, and drop-in configuration generation across 14 target platforms (`FastAPI`, `Spring Boot 3`, `MCP Server`, `NGINX`, `Vite`, `Proxmox VE`, `OpenSSH`, `Caddy`, `Traefik`, `Envoy`, `PostgreSQL`, `Redis`, `gRPC-Go`, and `Node.js/Express`):
 
 - **Multi-Tier X.509 PKI & Mutual TLS (mTLS)**: Root CAs, Intermediate CA chains (`fullchain.pem`, `ca-chain.pem`), standalone self-signed certificates, Server/Client/Dual-mTLS leaf certificates, PKCS#12 (`.p12`) & DER bundles, X.509 v2 CRLs, and OS trust store installers.
 - **OpenSSH Certificate Authorities**: Dedicated OpenSSH User CAs (`SSH_CERT_TYPE_USER`) and Host CAs (`SSH_CERT_TYPE_HOST`), Ed25519/ECDSA/RSA keypair generation, principal/validity/extension signing (`*-cert.pub`), certificate inspection, and automated `sshd_config`, `ssh_config`, `authorized_principals`, and `@cert-authority` `known_hosts` bundles.
@@ -129,7 +129,7 @@ flowchart TD
         PKI["src/pkg/pki\nRoot/Intermediate CAs, Self-Signed,\nServer/Client/mTLS, CRL, PKCS#12, Trust Scripts"]
         SSHCA["src/pkg/sshca\nOpenSSH User & Host CAs, Key Signing,\nsshd_config & @cert-authority Bundles"]
         ACME["src/pkg/acme\nRFC 8555 ACME v2 Client & Mock Server\n(HTTP-01, TLS-ALPN-01, DNS-01, EAB)"]
-        Targets["src/pkg/targets\n7 Platform Generators\n(fastapi, springboot, mcp, nginx, vite, proxmox, openssh)"]
+        Targets["src/pkg/targets\n14 Platform Generators\n(fastapi, springboot, mcp, nginx, vite, proxmox, openssh,\ncaddy, traefik, envoy, postgres, redis, grpc-go, nodejs-express)"]
     end
 
     subgraph Storage["Atomic Cryptographic Workspace"]

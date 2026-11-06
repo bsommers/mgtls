@@ -523,4 +523,314 @@ systemctl reload sshd || systemctl reload ssh
 echo "[mgtls] OpenSSH CA configuration deployed for {{.Host}}:{{.Port}}."
 `,
 	},
+	"caddy": {
+		"Caddyfile": `# Caddy 2 TLS 1.3 & Mutual TLS Configuration ({{.Name}})
+# Host: {{.Host}}:{{.Port}} | MutualTLS: {{.MutualTLS}}
+# CA: {{.CACertPath}} (Bundle: {{.LocalCACertPath}})
+# Server Cert: {{.ServerCertPath}} | Server Key: {{.ServerKeyPath}}
+# Client Cert: {{.ClientCertPath}} | Client Key: {{.ClientKeyPath}}
+
+https://{{.Host}}:{{.Port}} {
+	tls "{{.ServerCertPath}}" "{{.ServerKeyPath}}" {
+		protocols tls1.2 tls1.3
+		client_auth {
+			mode {{if .MutualTLS}}require_and_verify{{else}}verify_if_given{{end}}
+			trusted_ca_cert_file "{{.CACertPath}}"
+		}
+	}
+
+	reverse_proxy {{index .Extra "upstream_url"}} {
+		header_up X-SSL-Client-CN {http.request.tls.client.subject}
+		header_up X-SSL-Client-Fingerprint {http.request.tls.client.fingerprint}
+	}
+}
+`,
+		"verify_caddy_mtls.sh": `#!/usr/bin/env bash
+set -euo pipefail
+# Verify Caddy mTLS endpoint at https://{{.Host}}:{{.Port}}
+# CA: {{.CACertPath}} | Client Cert: {{.ClientCertPath}} | Client Key: {{.ClientKeyPath}}
+
+curl --fail --silent --show-error \
+  --cacert "{{.CACertPath}}" \
+  --cert "{{.ClientCertPath}}" \
+  --key "{{.ClientKeyPath}}" \
+  "https://{{.Host}}:{{.Port}}/"
+`,
+	},
+	"traefik": {
+		"traefik-dynamic-tls.yml": `# Traefik v3 Dynamic TLS & mTLS Configuration ({{.Name}})
+# Host: {{.Host}}:{{.Port}} | MutualTLS: {{.MutualTLS}}
+# CA: {{.CACertPath}} | Server Cert: {{.ServerCertPath}} | Server Key: {{.ServerKeyPath}}
+# Client Cert: {{.ClientCertPath}} | Client Key: {{.ClientKeyPath}}
+
+http:
+  routers:
+    {{.Name}}-router:
+      rule: "Host(` + "`{{.Host}}`" + `)"
+      service: {{.Name}}-service
+      tls:
+        options: {{.Name}}-mtls-options
+
+  services:
+    {{.Name}}-service:
+      loadBalancer:
+        servers:
+          - url: "{{index .Extra "upstream_url"}}"
+
+tls:
+  certificates:
+    - certFile: "{{.ServerCertPath}}"
+      keyFile: "{{.ServerKeyPath}}"
+  options:
+    {{.Name}}-mtls-options:
+      minVersion: VersionTLS12
+      clientAuth:
+        caFiles:
+          - "{{.CACertPath}}"
+        clientAuthType: {{if .MutualTLS}}RequireAndVerifyClientCert{{else}}VerifyClientCertIfGiven{{end}}
+`,
+		"verify_traefik_mtls.sh": `#!/usr/bin/env bash
+set -euo pipefail
+# Verify Traefik v3 mTLS router at https://{{.Host}}:{{.Port}}
+# CA: {{.CACertPath}} | Client Cert: {{.ClientCertPath}} | Client Key: {{.ClientKeyPath}}
+
+curl --fail --silent --show-error \
+  --cacert "{{.CACertPath}}" \
+  --cert "{{.ClientCertPath}}" \
+  --key "{{.ClientKeyPath}}" \
+  "https://{{.Host}}:{{.Port}}/"
+`,
+	},
+	"envoy": {
+		"envoy-mtls.yaml": `# Envoy Proxy Downstream mTLS & SPIFFE Configuration ({{.Name}})
+# Listener: {{.Host}}:{{.Port}} | MutualTLS: {{.MutualTLS}}
+# CA: {{.CACertPath}} | Server Cert: {{.ServerCertPath}} | Server Key: {{.ServerKeyPath}}
+# Client Cert: {{.ClientCertPath}} | Client Key: {{.ClientKeyPath}}
+
+static_resources:
+  listeners:
+    - name: {{.Name}}_listener
+      address:
+        socket_address:
+          address: {{.Host}}
+          port_value: {{.Port}}
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: {{.Name}}_ingress
+                forward_client_cert_details: SANITIZE_SET
+                set_current_client_cert_details:
+                  subject: true
+                  dns: true
+                  uri: true
+                route_config:
+                  name: local_route
+                  virtual_hosts:
+                    - name: {{.Name}}_vhost
+                      domains: ["{{.Host}}", "*"]
+                      routes:
+                        - match: { prefix: "/" }
+                          route: { cluster: {{.Name}}_upstream }
+                http_filters:
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+          transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              require_client_certificate: {{if .MutualTLS}}true{{else}}false{{end}}
+              common_tls_context:
+                tls_params:
+                  tls_minimum_protocol_version: TLSv1_2
+                tls_certificates:
+                  - certificate_chain: { filename: "{{.ServerCertPath}}" }
+                    private_key: { filename: "{{.ServerKeyPath}}" }
+                validation_context:
+                  trusted_ca: { filename: "{{.CACertPath}}" }
+`,
+		"verify_envoy_mtls.sh": `#!/usr/bin/env bash
+set -euo pipefail
+# Verify Envoy mTLS listener at https://{{.Host}}:{{.Port}}
+# CA: {{.CACertPath}} | Client Cert: {{.ClientCertPath}} | Client Key: {{.ClientKeyPath}}
+
+curl --fail --silent --show-error \
+  --cacert "{{.CACertPath}}" \
+  --cert "{{.ClientCertPath}}" \
+  --key "{{.ClientKeyPath}}" \
+  "https://{{.Host}}:{{.Port}}/"
+`,
+	},
+	"postgres": {
+		"postgresql-ssl.conf": `# PostgreSQL 16+ Server TLS/mTLS Configuration ({{.Name}})
+# Host: {{.Host}} | Port: {{.Port}} | MutualTLS: {{.MutualTLS}}
+# CA: {{.CACertPath}} | Server Cert: {{.ServerCertPath}} | Server Key: {{.ServerKeyPath}}
+
+listen_addresses = '{{.Host}}'
+port = {{.Port}}
+ssl = on
+ssl_ca_file = '{{.CACertPath}}'
+ssl_cert_file = '{{.ServerCertPath}}'
+ssl_key_file = '{{.ServerKeyPath}}'
+ssl_min_protocol_version = 'TLSv1.2'
+`,
+		"pg_hba_mtls.conf": `# PostgreSQL pg_hba.conf Client Certificate Enforcement ({{.Name}})
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+hostssl all             all             0.0.0.0/0               {{if .MutualTLS}}cert clientcert=verify-full{{else}}scram-sha-256{{end}}
+hostssl all             all             ::/0                    {{if .MutualTLS}}cert clientcert=verify-full{{else}}scram-sha-256{{end}}
+`,
+		"verify_postgres_mtls.sh": `#!/usr/bin/env bash
+set -euo pipefail
+# Verify PostgreSQL TLS/mTLS connection at {{.Host}}:{{.Port}}
+# CA: {{.CACertPath}} | Client Cert: {{.ClientCertPath}} | Client Key: {{.ClientKeyPath}}
+
+PGSSLMODE="{{if .MutualTLS}}verify-full{{else}}verify-ca{{end}}" \
+PGSSLROOTCERT="{{.CACertPath}}" \
+PGSSLCERT="{{.ClientCertPath}}" \
+PGSSLKEY="{{.ClientKeyPath}}" \
+psql "host={{.Host}} port={{.Port}} dbname=postgres" -c "SELECT ssl, version, cipher FROM pg_stat_ssl WHERE pid = pg_backend_pid();"
+`,
+	},
+	"redis": {
+		"redis-tls.conf": `# Redis 7+ / Valkey TLS & Mutual TLS Configuration ({{.Name}})
+# Host: {{.Host}} | TLS Port: {{.Port}} | MutualTLS: {{.MutualTLS}}
+# CA: {{.CACertPath}} | Server Cert: {{.ServerCertPath}} | Server Key: {{.ServerKeyPath}}
+
+bind {{.Host}}
+port 0
+tls-port {{.Port}}
+tls-cert-file "{{.ServerCertPath}}"
+tls-key-file "{{.ServerKeyPath}}"
+tls-ca-cert-file "{{.CACertPath}}"
+tls-auth-clients {{if .MutualTLS}}yes{{else}}optional{{end}}
+tls-protocols "TLSv1.2 TLSv1.3"
+`,
+		"verify_redis_mtls.sh": `#!/usr/bin/env bash
+set -euo pipefail
+# Verify Redis TLS/mTLS connection at {{.Host}}:{{.Port}}
+# CA: {{.CACertPath}} | Client Cert: {{.ClientCertPath}} | Client Key: {{.ClientKeyPath}}
+
+redis-cli --tls \
+  -h "{{.Host}}" \
+  -p "{{.Port}}" \
+  --cacert "{{.CACertPath}}" \
+  --cert "{{.ClientCertPath}}" \
+  --key "{{.ClientKeyPath}}" \
+  PING
+`,
+	},
+	"grpc-go": {
+		"grpc_mtls.go": `// Go gRPC TLS 1.3 & Mutual TLS Credentials Helper ({{.Name}})
+// Endpoint: {{.Host}}:{{.Port}} | MutualTLS: {{.MutualTLS}}
+// CA: {{.CACertPath}} | Server Cert: {{.ServerCertPath}} | Server Key: {{.ServerKeyPath}}
+// Client Cert: {{.ClientCertPath}} | Client Key: {{.ClientKeyPath}}
+package grpcmtls
+
+import (
+	"crypto/tls"
+	"crypto/x509"
+	"fmt"
+	"os"
+)
+
+func ServerTLSConfig() (*tls.Config, error) {
+	cert, err := tls.LoadX509KeyPair("{{.ServerCertPath}}", "{{.ServerKeyPath}}")
+	if err != nil {
+		return nil, err
+	}
+	caPEM, err := os.ReadFile("{{.CACertPath}}")
+	if err != nil {
+		return nil, err
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caPEM) {
+		return nil, fmt.Errorf("failed to append CA from {{.CACertPath}}")
+	}
+	return &tls.Config{
+		MinVersion:   tls.VersionTLS13,
+		Certificates: []tls.Certificate{cert},
+		ClientCAs:    pool,
+		ClientAuth:   {{if .MutualTLS}}tls.RequireAndVerifyClientCert{{else}}tls.VerifyClientCertIfGiven{{end}},
+	}, nil
+}
+
+func ClientTLSConfig() (*tls.Config, error) {
+	cert, err := tls.LoadX509KeyPair("{{.ClientCertPath}}", "{{.ClientKeyPath}}")
+	if err != nil {
+		return nil, err
+	}
+	caPEM, err := os.ReadFile("{{.CACertPath}}")
+	if err != nil {
+		return nil, err
+	}
+	pool := x509.NewCertPool()
+	pool.AppendCertsFromPEM(caPEM)
+	return &tls.Config{
+		MinVersion:   tls.VersionTLS13,
+		ServerName:   "{{.Host}}",
+		Certificates: []tls.Certificate{cert},
+		RootCAs:      pool,
+	}, nil
+}
+`,
+		"verify_grpc_mtls.sh": `#!/usr/bin/env bash
+set -euo pipefail
+# Verify gRPC TLS/mTLS endpoint at {{.Host}}:{{.Port}}
+# CA: {{.CACertPath}} | Client Cert: {{.ClientCertPath}} | Client Key: {{.ClientKeyPath}}
+
+grpcurl \
+  -cacert "{{.CACertPath}}" \
+  -cert "{{.ClientCertPath}}" \
+  -key "{{.ClientKeyPath}}" \
+  "{{.Host}}:{{.Port}}" list
+`,
+	},
+	"nodejs-express": {
+		"server_mtls.mjs": `// Node.js HTTPS / Express Mutual TLS Server ({{.Name}})
+// Endpoint: https://{{.Host}}:{{.Port}} | MutualTLS: {{.MutualTLS}}
+// CA: {{.CACertPath}} | Server Cert: {{.ServerCertPath}} | Server Key: {{.ServerKeyPath}}
+// Client Cert: {{.ClientCertPath}} | Client Key: {{.ClientKeyPath}}
+
+import fs from "node:fs";
+import https from "node:https";
+
+const options = {
+  ca: fs.readFileSync("{{.CACertPath}}"),
+  cert: fs.readFileSync("{{.ServerCertPath}}"),
+  key: fs.readFileSync("{{.ServerKeyPath}}"),
+  requestCert: true,
+  rejectUnauthorized: {{if .MutualTLS}}true{{else}}false{{end}},
+  minVersion: "TLSv1.2",
+};
+
+const server = https.createServer(options, (req, res) => {
+  const cert = req.socket.getPeerCertificate();
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({
+    status: "ok",
+    service: "{{.Name}}",
+    host: "{{.Host}}",
+    port: {{.Port}},
+    clientCN: cert?.subject?.CN ?? "anonymous",
+  }));
+});
+
+server.listen({{.Port}}, "{{.Host}}", () => {
+  console.log("Node.js mTLS server listening on https://{{.Host}}:{{.Port}}");
+});
+`,
+		"verify_node_mtls.sh": `#!/usr/bin/env bash
+set -euo pipefail
+# Verify Node.js HTTPS/mTLS server at https://{{.Host}}:{{.Port}}
+# CA: {{.CACertPath}} | Client Cert: {{.ClientCertPath}} | Client Key: {{.ClientKeyPath}}
+
+curl --fail --silent --show-error \
+  --cacert "{{.CACertPath}}" \
+  --cert "{{.ClientCertPath}}" \
+  --key "{{.ClientKeyPath}}" \
+  "https://{{.Host}}:{{.Port}}/"
+`,
+	},
 }

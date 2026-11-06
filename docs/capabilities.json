@@ -37,7 +37,7 @@
     },
     {
       "id": "CAP-TARGETS-001",
-      "name": "7 Target Framework & Server Generators (FastAPI, Spring Boot, MCP, NGINX, Vite, Proxmox, OpenSSH)",
+      "name": "14 Target Framework & Server Generators (FastAPI, Spring Boot, MCP, NGINX, Vite, Proxmox, OpenSSH, Caddy, Traefik, Envoy, PostgreSQL, Redis, gRPC-Go, Node.js/Express)",
       "status": "operational",
       "since": "1.0.0",
       "package": "src/pkg/targets",

@@ -256,8 +256,8 @@ func TestMCPProtocolLifecycleAndTools(t *testing.T) {
 	// target_list & target_generate (auto-resolving store paths!)
 	tListOut := callToolJSON(t, srv, "target_list", nil)
 	tSpecs, _ := tListOut["targets"].([]any)
-	if len(tSpecs) != 7 {
-		t.Fatalf("expected 7 target specs, got %d", len(tSpecs))
+	if len(tSpecs) != 14 {
+		t.Fatalf("expected 14 target specs, got %d", len(tSpecs))
 	}
 
 	tGenOut := callToolJSON(t, srv, "target_generate", map[string]any{

@@ -46,7 +46,7 @@ type GenerateResult struct {
 	Notes  []string           `json:"notes"`
 }
 
-// SupportedTargets returns specifications for all 7 supported target integrations.
+// SupportedTargets returns specifications for all 14 supported target integrations.
 func SupportedTargets() []TargetSpec {
 	return []TargetSpec{
 		{
@@ -98,25 +98,82 @@ func SupportedTargets() []TargetSpec {
 			Description: "OpenSSH TrustedUserCAKeys, HostCertificate, @cert-authority known_hosts, and deployment script",
 			Files:       []string{"sshd_ca.conf", "ssh_client_ca.conf", "deploy_ssh_ca.sh"},
 		},
+		{
+			ID:          "caddy",
+			Name:        "Caddy 2 TLS 1.3 & Mutual TLS Reverse Proxy",
+			Category:    "proxy",
+			Description: "Caddyfile with strict client_auth mTLS verification and upstream identity header injection",
+			Files:       []string{"Caddyfile", "verify_caddy_mtls.sh"},
+		},
+		{
+			ID:          "traefik",
+			Name:        "Traefik v3 Dynamic TLS & mTLS Router",
+			Category:    "proxy",
+			Description: "Traefik v3 dynamic TLS options (RequireAndVerifyClientCert) and HTTP router configuration",
+			Files:       []string{"traefik-dynamic-tls.yml", "verify_traefik_mtls.sh"},
+		},
+		{
+			ID:          "envoy",
+			Name:        "Envoy Proxy Downstream mTLS & SPIFFE Validator",
+			Category:    "proxy",
+			Description: "Envoy static bootstrap with DownstreamTlsContext client certificate & SAN validation",
+			Files:       []string{"envoy-mtls.yaml", "verify_envoy_mtls.sh"},
+		},
+		{
+			ID:          "postgres",
+			Name:        "PostgreSQL 16+ Server & Client mTLS (verify-full)",
+			Category:    "database",
+			Description: "PostgreSQL postgresql.conf SSL settings, pg_hba.conf clientcert=verify-full rules, and psql client verification script",
+			Files:       []string{"postgresql-ssl.conf", "pg_hba_mtls.conf", "verify_postgres_mtls.sh"},
+		},
+		{
+			ID:          "redis",
+			Name:        "Redis 7+ / Valkey TLS & Mutual TLS Server",
+			Category:    "database",
+			Description: "Redis TLS configuration (tls-auth-clients) and redis-cli mTLS ping verification script",
+			Files:       []string{"redis-tls.conf", "verify_redis_mtls.sh"},
+		},
+		{
+			ID:          "grpc-go",
+			Name:        "Go gRPC TLS 1.3 & Mutual TLS Server/Client",
+			Category:    "api",
+			Description: "Go google.golang.org/grpc/credentials TLS 1.3 mutual authentication server and client starter",
+			Files:       []string{"grpc_mtls.go", "verify_grpc_mtls.sh"},
+		},
+		{
+			ID:          "nodejs-express",
+			Name:        "Node.js HTTPS / Express Mutual TLS Server & Client",
+			Category:    "api",
+			Description: "Node.js node:https server with peer certificate inspection and mTLS client verification script",
+			Files:       []string{"server_mtls.mjs", "verify_node_mtls.sh"},
+		},
 	}
 }
 
 func defaultPortForTarget(targetType string) int {
 	switch targetType {
-	case "fastapi":
-		return 8443
-	case "springboot":
+	case "fastapi", "springboot":
 		return 8443
 	case "mcp":
 		return 8444
-	case "nginx":
+	case "nginx", "caddy", "traefik":
 		return 443
+	case "envoy":
+		return 10000
 	case "vite":
 		return 5173
 	case "proxmox":
 		return 8006
 	case "openssh":
 		return 22
+	case "postgres":
+		return 5432
+	case "redis":
+		return 6379
+	case "grpc-go":
+		return 50051
+	case "nodejs-express":
+		return 3443
 	default:
 		return 8443
 	}

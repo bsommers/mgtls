@@ -1,7 +1,7 @@
 # `mgtls` Forward Roadmap & Next Options (`v1.2.0+`)
 
-> **Status**: Option 1 (Distribution & Zero-Friction Onboarding) is **COMPLETED**.  
-> The remaining options below are preserved verbatim for selection and execution in upcoming milestones.
+> **Status**: Option 1 (Distribution & Zero-Friction Onboarding) and Option 2 (14 Target Framework Generators) are **COMPLETED**.  
+> The remaining options (Option 3 and Option 4) are preserved verbatim below for selection and execution in upcoming milestones.
 
 ---
 
@@ -22,8 +22,8 @@
 
 ## Remaining Options for Upcoming Milestones (Prompt Later)
 
-### [ ] Option 2: New Target Framework Generators (`v1.2.0`)
-Expand `mgtls target generate` in `src/pkg/targets/targets.go` and `src/pkg/targets/templates.go` beyond the initial 7 targets (`fastapi`, `springboot`, `mcp`, `nginx`, `vite`, `proxmox`, `openssh`):
+### [x] Option 2: New Target Framework Generators (`v1.2.0` — `COMPLETED`)
+Expanded `mgtls target generate` in `src/pkg/targets/targets.go` and `src/pkg/targets/templates.go` from 7 to **14 targets** (`fastapi`, `springboot`, `mcp`, `nginx`, `vite`, `proxmox`, `openssh`, `caddy`, `traefik`, `envoy`, `postgres`, `redis`, `grpc-go`, `nodejs-express`):
 1. **Cloud-Native Ingress & Service Mesh**:
    - **`caddy`**: Automatic mTLS (`client_auth { mode require_and_verify }`) Caddyfile bundle.
    - **`traefik`**: Dynamic TLS `ClientAuthType: RequireAndVerifyClientCert` YAML bundle.

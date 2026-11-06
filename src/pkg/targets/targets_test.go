@@ -12,18 +12,25 @@ import (
 
 func TestSupportedTargets(t *testing.T) {
 	specs := SupportedTargets()
-	if len(specs) != 7 {
-		t.Fatalf("expected 7 supported targets, got %d", len(specs))
+	if len(specs) != 14 {
+		t.Fatalf("expected 14 supported targets, got %d", len(specs))
 	}
 
 	expected := map[string][]string{
-		"fastapi":    {"app.py", "run_server.sh", "client_mtls.py", "verify_mtls.sh"},
-		"springboot": {"application-tls.yml", "MtlsSecurityConfig.java", "MtlsRestClientConfig.java", "verify_mtls.sh"},
-		"mcp":        {"mcp_server_mtls.ts", "mcp_server_mtls.py", "mcp_client_config.json", "nginx_mcp_sidecar.conf", "verify_mcp_mtls.sh"},
-		"nginx":      {"nginx-mtls.conf", "verify_nginx_mtls.sh"},
-		"vite":       {"vite.config.mtls.ts", "client_fetch_mtls.mjs"},
-		"proxmox":    {"deploy_proxmox_cert.sh", "proxmox_pveproxy_verify.sh", "README-proxmox.md"},
-		"openssh":    {"sshd_ca.conf", "ssh_client_ca.conf", "deploy_ssh_ca.sh"},
+		"fastapi":        {"app.py", "run_server.sh", "client_mtls.py", "verify_mtls.sh"},
+		"springboot":     {"application-tls.yml", "MtlsSecurityConfig.java", "MtlsRestClientConfig.java", "verify_mtls.sh"},
+		"mcp":            {"mcp_server_mtls.ts", "mcp_server_mtls.py", "mcp_client_config.json", "nginx_mcp_sidecar.conf", "verify_mcp_mtls.sh"},
+		"nginx":          {"nginx-mtls.conf", "verify_nginx_mtls.sh"},
+		"vite":           {"vite.config.mtls.ts", "client_fetch_mtls.mjs"},
+		"proxmox":        {"deploy_proxmox_cert.sh", "proxmox_pveproxy_verify.sh", "README-proxmox.md"},
+		"openssh":        {"sshd_ca.conf", "ssh_client_ca.conf", "deploy_ssh_ca.sh"},
+		"caddy":          {"Caddyfile", "verify_caddy_mtls.sh"},
+		"traefik":        {"traefik-dynamic-tls.yml", "verify_traefik_mtls.sh"},
+		"envoy":          {"envoy-mtls.yaml", "verify_envoy_mtls.sh"},
+		"postgres":       {"postgresql-ssl.conf", "pg_hba_mtls.conf", "verify_postgres_mtls.sh"},
+		"redis":          {"redis-tls.conf", "verify_redis_mtls.sh"},
+		"grpc-go":        {"grpc_mtls.go", "verify_grpc_mtls.sh"},
+		"nodejs-express": {"server_mtls.mjs", "verify_node_mtls.sh"},
 	}
 
 	for _, sp := range specs {
@@ -187,13 +194,20 @@ func TestGenerateDefaultsAndTLSOnlyMode(t *testing.T) {
 	}
 
 	wantPorts := map[string]int{
-		"fastapi":    8443,
-		"springboot": 8443,
-		"mcp":        8444,
-		"nginx":      443,
-		"vite":       5173,
-		"proxmox":    8006,
-		"openssh":    22,
+		"fastapi":        8443,
+		"springboot":     8443,
+		"mcp":            8444,
+		"nginx":          443,
+		"vite":           5173,
+		"proxmox":        8006,
+		"openssh":        22,
+		"caddy":          443,
+		"traefik":        443,
+		"envoy":          10000,
+		"postgres":       5432,
+		"redis":          6379,
+		"grpc-go":        50051,
+		"nodejs-express": 3443,
 	}
 
 	for _, sp := range SupportedTargets() {

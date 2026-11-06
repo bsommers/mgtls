@@ -3,19 +3,26 @@
 `mgtls target generate` eliminates manual certificate wiring by provisioning the required CA, Server certificate, and Client mTLS certificate, then rendering drop-in configuration files, application entrypoints, client harnesses, and verification scripts.
 
 ```bash
-# List all 7 supported target templates
+# List all 14 supported target templates
 mgtls target list
 ```
 
 | Target ID | Platform / Stack | Default Port | Generated Artifacts |
 | :--- | :--- | :--- | :--- |
-| `fastapi` | Python FastAPI + Uvicorn + `httpx` | `8443` | `server.py`, `client.py`, `run-uvicorn.sh`, `verify.sh` |
-| `springboot` | Spring Boot 3.2+ SSL Bundles + `RestClient` | `8443` | `application-tls.yml`, `MtlsConfig.java`, `verify.sh` |
-| `mcp` | Model Context Protocol Server & Client (TS / FastMCP / NGINX) | `8443` | `mcp-server-mtls.ts`, `fastmcp_mtls.py`, `mcp-client-config.json`, `verify.sh` |
-| `nginx` | NGINX TLS 1.3 + Strict mTLS Reverse Proxy | `8443` | `nginx-mtls.conf`, `verify.sh` |
-| `vite` | Vite 5/6 Local HTTPS & mTLS Development Server | `5173` | `vite.config.ts`, `verify.sh` |
-| `proxmox` | Proxmox VE (`pveproxy-ssl.pem` / `pvenode cert set`) | `8006` | `deploy-proxmox-cert.sh`, `verify.sh` |
-| `openssh` | OpenSSH User & Host CA Fleet Bundle | `22` | `sshd_config.d/mgtls-ca.conf`, `ssh_config.d/mgtls.conf`, `authorized_principals`, `known_hosts`, `deploy-sshd-ca.sh` |
+| `fastapi` | Python FastAPI + Uvicorn + `httpx` | `8443` | `app.py`, `run_server.sh`, `client_mtls.py`, `verify_mtls.sh` |
+| `springboot` | Spring Boot 3.2+ SSL Bundles + `RestClient` | `8443` | `application-tls.yml`, `MtlsSecurityConfig.java`, `MtlsRestClientConfig.java`, `verify_mtls.sh` |
+| `mcp` | Model Context Protocol Server & Client (TS / FastMCP / NGINX) | `8444` | `mcp_server_mtls.ts`, `mcp_server_mtls.py`, `mcp_client_config.json`, `nginx_mcp_sidecar.conf`, `verify_mcp_mtls.sh` |
+| `nginx` | NGINX TLS 1.3 + Strict mTLS Reverse Proxy | `443` | `nginx-mtls.conf`, `verify_nginx_mtls.sh` |
+| `vite` | Vite 5/6 Local HTTPS & mTLS Development Server | `5173` | `vite.config.mtls.ts`, `client_fetch_mtls.mjs` |
+| `proxmox` | Proxmox VE (`pveproxy-ssl.pem` / `pvenode cert set`) | `8006` | `deploy_proxmox_cert.sh`, `proxmox_pveproxy_verify.sh`, `README-proxmox.md` |
+| `openssh` | OpenSSH User & Host CA Fleet Bundle | `22` | `sshd_ca.conf`, `ssh_client_ca.conf`, `deploy_ssh_ca.sh` |
+| `caddy` | Caddy 2 TLS 1.3 & Mutual TLS Reverse Proxy | `443` | `Caddyfile`, `verify_caddy_mtls.sh` |
+| `traefik` | Traefik v3 Dynamic TLS & mTLS Router | `443` | `traefik-dynamic-tls.yml`, `verify_traefik_mtls.sh` |
+| `envoy` | Envoy Proxy Downstream mTLS & SPIFFE Validator | `10000` | `envoy-mtls.yaml`, `verify_envoy_mtls.sh` |
+| `postgres` | PostgreSQL 16+ Server & Client mTLS (`verify-full`) | `5432` | `postgresql-ssl.conf`, `pg_hba_mtls.conf`, `verify_postgres_mtls.sh` |
+| `redis` | Redis 7+ / Valkey TLS & Mutual TLS Server | `6379` | `redis-tls.conf`, `verify_redis_mtls.sh` |
+| `grpc-go` | Go gRPC TLS 1.3 & Mutual TLS Server/Client | `50051` | `grpc_mtls.go`, `verify_grpc_mtls.sh` |
+| `nodejs-express` | Node.js HTTPS / Express Mutual TLS Server & Client | `3443` | `server_mtls.mjs`, `verify_node_mtls.sh` |
 
 ---
 

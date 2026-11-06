@@ -426,7 +426,7 @@ func (srv *Server) listTools() []mcpTool {
 		},
 		{
 			Name:        "target_list",
-			Description: "List supported target framework integrations (fastapi, springboot, mcp, nginx, vite, proxmox, openssh)",
+			Description: "List supported target framework integrations (fastapi, springboot, mcp, nginx, vite, proxmox, openssh, caddy, traefik, envoy, postgres, redis, grpc-go, nodejs-express)",
 			InputSchema: map[string]any{
 				"type":       "object",
 				"properties": map[string]any{},
@@ -434,12 +434,12 @@ func (srv *Server) listTools() []mcpTool {
 		},
 		{
 			Name:        "target_generate",
-			Description: "Generate ready-to-run TLS/mTLS or SSH CA integration configurations for FastAPI, Spring Boot, MCP, NGINX, Vite, Proxmox, or OpenSSH",
+			Description: "Generate ready-to-run TLS/mTLS or SSH CA integration configurations for 14 targets (FastAPI, Spring Boot, MCP, NGINX, Vite, Proxmox, OpenSSH, Caddy, Traefik, Envoy, PostgreSQL, Redis, gRPC-Go, Node.js/Express)",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"name":             map[string]any{"type": "string"},
-					"target_type":      map[string]any{"type": "string", "description": "fastapi, springboot, mcp, nginx, vite, proxmox, openssh"},
+					"target_type":      map[string]any{"type": "string", "description": "fastapi, springboot, mcp, nginx, vite, proxmox, openssh, caddy, traefik, envoy, postgres, redis, grpc-go, nodejs-express"},
 					"output_dir":       map[string]any{"type": "string"},
 					"host":             map[string]any{"type": "string"},
 					"port":             map[string]any{"type": "integer"},

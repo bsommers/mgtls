@@ -112,7 +112,7 @@ Commands:
     obtain                   Obtain a certificate via HTTP-01, TLS-ALPN-01, or DNS-01
     renew-check              Check ACME certificates approaching expiration
   target <subcommand>        Scaffold production TLS/mTLS setups for servers & frameworks
-    list                     List supported targets (fastapi, springboot, mcp, nginx, vite, proxmox, openssh)
+    list                     List supported targets (fastapi, springboot, mcp, nginx, vite, proxmox, openssh, caddy, traefik, envoy, postgres, redis, grpc-go, nodejs-express)
     generate                 Generate a complete target bundle (auto-provisions certs if needed)
   apply -f <mgtls.yaml>      Declaratively provision an entire PKI/SSH/ACME/Target fleet from YAML/JSON
   status                     Display store inventory manifest
@@ -143,7 +143,8 @@ func printGuide(w io.Writer) {
 3. RECONCILE DECLARATIVE FLEET OR GENERATE TARGET BUNDLES
    mgtls apply -f mgtls.yaml
    mgtls target generate --type fastapi --name api-mtls --host api.internal --mtls --out ./fastapi-bundle
-   # Supported targets: fastapi, springboot, mcp, nginx, vite, proxmox, openssh
+   # Supported targets (14): fastapi, springboot, mcp, nginx, vite, proxmox, openssh,
+   #                         caddy, traefik, envoy, postgres, redis, grpc-go, nodejs-express
 
 4. ISSUE OPENSSH CAs & PUBLIC ACME v2 CERTIFICATES
    mgtls ssh ca-create --name ssh-user-ca --type user
