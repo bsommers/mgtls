@@ -1,6 +1,8 @@
 package sshca
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -63,5 +65,64 @@ func TestConfigBundleRejectsDirectiveInjection(t *testing.T) {
 	}
 	if _, err := GenerateSSHConfigBundle(s, SSHConfigRequest{Name: "b", UserCAName: "users", Principals: []string{"ops\nroot"}, OutputDir: out}); err == nil {
 		t.Error("newline in bundle principal accepted")
+	}
+}
+
+func TestConfigBundlePerAccountPrincipals(t *testing.T) {
+	s := newSSHStore(t)
+	out := t.TempDir()
+	b, err := GenerateSSHConfigBundle(s, SSHConfigRequest{
+		Name:              "acct",
+		UserCAName:        "users",
+		AccountPrincipals: map[string][]string{"deploy": {"alice", "ci"}, "alice": {"alice"}},
+		OutputDir:         out,
+	})
+	if err != nil {
+		t.Fatalf("GenerateSSHConfigBundle: %v", err)
+	}
+	want := map[string]string{"deploy": "alice\nci\n", "alice": "alice\n"}
+	for acct, content := range want {
+		got, err := os.ReadFile(filepath.Join(b.AuthorizedPrincipalsDir, acct))
+		if err != nil || string(got) != content {
+			t.Errorf("auth_principals/%s = %q (%v), want %q", acct, got, err, content)
+		}
+	}
+	// "ci" must not be able to log in as root or alice: no file for root, alice's file lacks ci.
+	if _, err := os.Stat(filepath.Join(b.AuthorizedPrincipalsDir, "root")); !os.IsNotExist(err) {
+		t.Errorf("unexpected auth_principals/root: %v", err)
+	}
+	conf, _ := os.ReadFile(b.SSHDConfigPath)
+	if !strings.Contains(string(conf), "AuthorizedPrincipalsFile "+filepath.Join(out, "auth_principals", "%u")) {
+		t.Errorf("drop-in missing %%u directive:\n%s", conf)
+	}
+
+	// Re-running without an account removes its file so the grant is revoked.
+	if _, err := GenerateSSHConfigBundle(s, SSHConfigRequest{Name: "acct", UserCAName: "users", AccountPrincipals: map[string][]string{"alice": {"alice"}}, OutputDir: out}); err != nil {
+		t.Fatalf("regenerate: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(b.AuthorizedPrincipalsDir, "deploy")); !os.IsNotExist(err) {
+		t.Errorf("stale auth_principals/deploy survived regeneration: %v", err)
+	}
+}
+
+func TestConfigBundleRejectsBadAccounts(t *testing.T) {
+	s := newSSHStore(t)
+	out := t.TempDir()
+	for _, acct := range []string{"..", "../etc", "a/b", "Root", "-x", "", "%u", "a b", strings.Repeat("a", 33)} {
+		if _, err := GenerateSSHConfigBundle(s, SSHConfigRequest{Name: "b", UserCAName: "users", AccountPrincipals: map[string][]string{acct: {"alice"}}, OutputDir: out}); err == nil {
+			t.Errorf("account name %q accepted", acct)
+		}
+	}
+	cases := []SSHConfigRequest{
+		{Name: "b", UserCAName: "users", AccountPrincipals: map[string][]string{"deploy": {}}, OutputDir: out},
+		{Name: "b", UserCAName: "users", AccountPrincipals: map[string][]string{"deploy": {"ops\nroot"}}, OutputDir: out},
+		{Name: "b", UserCAName: "users", Principals: []string{"alice"}, AccountPrincipals: map[string][]string{"deploy": {"ci"}}, OutputDir: out},
+		// Shorthand principals double as account names, so "alice@corp" must be mapped explicitly.
+		{Name: "b", UserCAName: "users", Principals: []string{"alice@corp"}, OutputDir: out},
+	}
+	for i, req := range cases {
+		if _, err := GenerateSSHConfigBundle(s, req); err == nil {
+			t.Errorf("case %d accepted: %+v", i, req)
+		}
 	}
 }

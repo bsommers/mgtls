@@ -118,7 +118,7 @@ Commands:
     sign-user                Sign an OpenSSH User certificate
     sign-host                Sign an OpenSSH Host certificate
     inspect                  Inspect an OpenSSH *-cert.pub certificate
-    config                   Generate sshd_config, ssh_config, known_hosts & authorized_principals
+    config                   Generate sshd_config, ssh_config, known_hosts & per-account auth_principals/
   acme <subcommand>          Manage free public TLS certificates via ACME v2 (Let's Encrypt, ZeroSSL, Buypass, Google)
     providers                List built-in public ACME v2 providers
     obtain                   Obtain a certificate via HTTP-01, TLS-ALPN-01, or DNS-01
@@ -175,6 +175,24 @@ func writeJSON(w io.Writer, v any) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(v)
+}
+
+// accountFlag collects repeatable --account ACCOUNT=P1,P2 values.
+type accountFlag struct{ m map[string][]string }
+
+func (a *accountFlag) String() string { return fmt.Sprint(a.m) }
+
+func (a *accountFlag) Set(v string) error {
+	acct, ps, ok := strings.Cut(v, "=")
+	acct = strings.TrimSpace(acct)
+	if !ok || acct == "" || len(splitCSV(ps)) == 0 {
+		return fmt.Errorf("expected ACCOUNT=PRINCIPAL[,PRINCIPAL...], got %q", v)
+	}
+	if a.m == nil {
+		a.m = map[string][]string{}
+	}
+	a.m[acct] = append(a.m[acct], splitCSV(ps)...)
+	return nil
 }
 
 func splitCSV(s string) []string {
@@ -653,7 +671,9 @@ func runSSH(defaultStoreDir string, args []string, stdout io.Writer) error {
 		userCert := fs.String("user-cert", "", "User certificate name")
 		patterns := fs.String("host-patterns", "*", "Comma-separated known_hosts patterns")
 		hosts := fs.String("hosts", "", "Alias for --host-patterns")
-		principals := fs.String("principals", "root,admin", "Comma-separated authorized principals")
+		principals := fs.String("principals", "", "Comma-separated principals; each may log in only as the same-named account")
+		var accounts accountFlag
+		fs.Var(&accounts, "account", "Repeatable ACCOUNT=PRINCIPAL[,PRINCIPAL...]: principals allowed to log in as ACCOUNT (e.g. --account deploy=alice,ci)")
 		outDir := fs.String("out", "", "Output directory")
 		if err := fs.Parse(rest); err != nil {
 			return err
@@ -667,14 +687,15 @@ func runSSH(defaultStoreDir string, args []string, stdout io.Writer) error {
 			return err
 		}
 		res, err := sshca.GenerateSSHConfigBundle(s, sshca.SSHConfigRequest{
-			Name:         *name,
-			UserCAName:   *userCA,
-			HostCAName:   *hostCA,
-			HostCertName: *hostCert,
-			UserCertName: *userCert,
-			HostPatterns: splitCSV(patStr),
-			Principals:   splitCSV(*principals),
-			OutputDir:    *outDir,
+			Name:              *name,
+			UserCAName:        *userCA,
+			HostCAName:        *hostCA,
+			HostCertName:      *hostCert,
+			UserCertName:      *userCert,
+			HostPatterns:      splitCSV(patStr),
+			Principals:        splitCSV(*principals),
+			AccountPrincipals: accounts.m,
+			OutputDir:         *outDir,
 		})
 		if err != nil {
 			return err

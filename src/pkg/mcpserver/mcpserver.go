@@ -399,7 +399,7 @@ func (srv *Server) listTools() []mcpTool {
 		},
 		{
 			Name:        "ssh_config_bundle",
-			Description: "Generate OpenSSH sshd_config drop-in, ssh_config drop-in, @cert-authority known_hosts, and authorized_principals",
+			Description: "Generate OpenSSH sshd_config drop-in, ssh_config drop-in, @cert-authority known_hosts, and per-account auth_principals/<account> files (sshd AuthorizedPrincipalsFile .../%u)",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -409,8 +409,13 @@ func (srv *Server) listTools() []mcpTool {
 					"host_cert_name": map[string]any{"type": "string"},
 					"user_cert_name": map[string]any{"type": "string"},
 					"host_patterns":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-					"principals":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-					"output_dir":     map[string]any{"type": "string"},
+					"principals":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Shorthand: each principal may log in only as the local account of the same name"},
+					"account_principals": map[string]any{
+						"type":                 "object",
+						"description":          "Map of local account -> certificate principals allowed to log in as it, e.g. {\"deploy\": [\"alice\", \"ci\"]}. Mutually exclusive with principals.",
+						"additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+					},
+					"output_dir": map[string]any{"type": "string"},
 				},
 			},
 		},
@@ -939,7 +944,7 @@ func (srv *Server) getPrompt(name string, args map[string]string) (string, []mcp
 				"1. Call `ssh_create_ca` with `name: \"%s-user-ca\"`, `ca_type: \"user\"`.\n"+
 				"2. Call `ssh_create_ca` with `name: \"%s-host-ca\"`, `ca_type: \"host\"`.\n"+
 				"3. Call `ssh_sign_cert` for user identity (`principals: [%q]`) and host identity.\n"+
-				"4. Call `ssh_config_bundle` to generate `sshd_config`, `ssh_config`, `known_hosts`, and `authorized_principals`.",
+				"4. Call `ssh_config_bundle` to generate `sshd_config`, `ssh_config`, `known_hosts`, and per-account `auth_principals/` files.",
 			env, env, env, principals,
 		)
 		return "OpenSSH User & Host CA rollout workflow", []mcpPromptMessage{{

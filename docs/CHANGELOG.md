@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Container** now actually runs as UID/GID `65532` with a non-root-owned `/data`.
 - **Installer**: fails when no SHA-256 tool is available instead of installing unverified; validates `--version`; never builds from the current directory under `curl | bash`; uninstall only removes a share dir it created.
 
+- **OpenSSH config bundles write one principals file per account.** The old bundle wrote a single `authorized_principals` file, so a certificate with any listed principal could log in as every local account. The bundle now writes `auth_principals/<account>` files and the sshd drop-in sets `AuthorizedPrincipalsFile <out>/auth_principals/%u`. Map accounts explicitly with `ssh config --account deploy=alice,ci`, or with `account_principals` in MCP and manifests. `--principals a,b` now means that each principal may log in only as the account of the same name. `--principals` no longer defaults to `root,admin`. Rerunning the command removes the files of dropped accounts, and the old single `authorized_principals` file is deleted. **Breaking**: redeploy the bundle and remove `/etc/ssh/authorized_principals`.
+
 ### Fixed
 - `mgtls watch` no longer exits on the first failing certificate; failures are reported per cycle (`errors` in the JSON report) and retried, and target regeneration / `--on-renew` still run for certificates that did renew. The hook has a 5-minute timeout. SIGINT/SIGTERM now cancel cleanly.
 - Target generation no longer swallows read/write errors when copying key material (a missing local path still falls back to a verbatim reference).

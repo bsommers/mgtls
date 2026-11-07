@@ -285,12 +285,17 @@ func TestSSHCALifecycleAndCertVerification(t *testing.T) {
 		t.Fatalf("unexpected known_hosts content: %s", string(knownHostsBytes))
 	}
 
-	authPrincBytes, err := os.ReadFile(bundle.AuthorizedPrincipals)
-	if err != nil {
-		t.Fatalf("read authorized_principals: %v", err)
+	if !strings.Contains(sshdConf, "AuthorizedPrincipalsFile "+filepath.Join(bundleDir, "auth_principals", "%u")+"\n") {
+		t.Fatalf("sshd_config must use per-account %%u principals file:\n%s", sshdConf)
 	}
-	if string(authPrincBytes) != "alice\nadmin\ndeploy\n" {
-		t.Fatalf("unexpected authorized_principals content: %q", string(authPrincBytes))
+	for _, p := range []string{"alice", "admin", "deploy"} {
+		b, err := os.ReadFile(filepath.Join(bundle.AuthorizedPrincipalsDir, p))
+		if err != nil {
+			t.Fatalf("read auth_principals/%s: %v", p, err)
+		}
+		if string(b) != p+"\n" {
+			t.Fatalf("auth_principals/%s = %q, want only %q", p, b, p)
+		}
 	}
 
 	clientConfBytes, err := os.ReadFile(bundle.SSHClientConfigPath)

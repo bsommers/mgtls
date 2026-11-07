@@ -14,7 +14,7 @@ Modern infrastructure requires zero-trust transport security everywhere—mutual
 `mgtls` provides deterministic lifecycle management across six domains:
 
 1. **X.509 Public Key Infrastructure (`pkg/pki`)**: Root CAs, multi-tier Intermediate CAs, standalone self-signed certificates, Server/Client/Dual mutual TLS (mTLS) leaf certificates, Certificate Revocation Lists (CRLs), PKCS#12/DER exports, and OS trust store provisioning scripts.
-2. **OpenSSH Certificate Authorities (`pkg/sshca`)**: Dedicated SSH User CAs and SSH Host CAs, OpenSSH v01 certificate signing (`*-cert.pub`), certificate inspection, and automated `sshd_config`/`ssh_config`/`authorized_principals`/`known_hosts` configuration bundles.
+2. **OpenSSH Certificate Authorities (`pkg/sshca`)**: Dedicated SSH User CAs and SSH Host CAs, OpenSSH v01 certificate signing (`*-cert.pub`), certificate inspection, and automated `sshd_config`/`ssh_config`/per-account `auth_principals/`/`known_hosts` configuration bundles.
 3. **RFC 8555 ACME v2 Public Encryption (`pkg/acme`)**: Automated issuance from Let's Encrypt (Production & Staging), ZeroSSL, Buypass, Google Trust Services, and custom ACME directories via HTTP-01, TLS-ALPN-01 (`1.3.6.1.5.5.7.1.31`), and DNS-01 challenges, backed by a built-in RFC 8555 mock ACME server (`pkg/acme/mockserver`) for offline verification.
 4. **Target Framework & Server Scaffolding (`pkg/targets`)**: Ready-to-run TLS and mTLS configurations, application templates, and verification harnesses for Python FastAPI, Spring Boot 3, MCP Servers, NGINX, Vite, Proxmox VE, and OpenSSH.
 5. **Declarative Fleet Management (`pkg/profile`)**: Idempotent state reconciliation (`mgtls apply -f mgtls.yaml`) and automated fleet diagnostics (`mgtls status`, `mgtls doctor`).
@@ -207,7 +207,7 @@ By default, `mgtls` stores state in `.mgtls/` (override via `--store-dir` or `MG
 │   └── config/                           [0755 drwxr-xr-x]
 │       ├── sshd_config.d/mgtls-ca.conf   [0644 -rw-r--r--]
 │       ├── ssh_config.d/mgtls.conf       [0644 -rw-r--r--]
-│       ├── authorized_principals         [0644 -rw-r--r--]
+│       ├── auth_principals/<account>     [0644 -rw-r--r--] (one per account; sshd AuthorizedPrincipalsFile …/%u)
 │       └── known_hosts                   [0644 -rw-r--r--]
 ├── acme/                                 [0700 drwx------]
 │   ├── accounts/                         [0700 drwx------]
