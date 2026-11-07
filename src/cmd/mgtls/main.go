@@ -1,6 +1,9 @@
 package main
 
 import (
+	"os/signal"
+	"syscall"
+	"errors"
 	"context"
 	"encoding/json"
 	"flag"
@@ -22,7 +25,11 @@ import (
 const Version = "1.2.0"
 
 func main() {
-	if err := run(context.Background(), os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil {
+	// Cancel on SIGINT/SIGTERM so `mgtls watch` and `mgtls mcp serve` shut down
+	// between cycles instead of being killed mid-write.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := run(ctx, os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
@@ -981,7 +988,10 @@ func runMCP(ctx context.Context, defaultStoreDir string, args []string, stdin io
 	addr := fs.String("addr", "127.0.0.1:8443", "Listen address for http/https/mtls transport")
 	tlsCert := fs.String("tls-cert", "", "Optional server TLS certificate PEM for HTTPS/mTLS MCP server")
 	tlsKey := fs.String("tls-key", "", "Optional server TLS private key PEM for HTTPS/mTLS MCP server")
-	clientCA := fs.String("client-ca", "", "Optional client CA bundle PEM to require mTLS on MCP server")
+	clientCA := fs.String("client-ca", "", "Client CA bundle PEM to require mTLS on MCP server")
+	tokenFile := fs.String("token-file", "", "File holding the bearer token required on HTTP requests (default: $MGTLS_MCP_TOKEN)")
+	insecureNoAuth := fs.Bool("insecure-no-auth", false, "Allow an unauthenticated HTTP MCP server (loopback addresses only)")
+	allowExec := fs.Bool("allow-exec-hooks", false, "Allow MCP callers to pass acme_obtain dns_exec_hook / skip_verify_tls")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -994,6 +1004,19 @@ func runMCP(ctx context.Context, defaultStoreDir string, args []string, stdin io
 		return err
 	}
 	srv := mcpserver.NewServer(s)
+	srv.AllowExecHooks = *allowExec
+	srv.AllowInsecureNoAuth = *insecureNoAuth
+	srv.AuthToken = strings.TrimSpace(os.Getenv("MGTLS_MCP_TOKEN"))
+	if *tokenFile != "" {
+		raw, err := os.ReadFile(*tokenFile)
+		if err != nil {
+			return fmt.Errorf("read --token-file: %w", err)
+		}
+		srv.AuthToken = strings.TrimSpace(string(raw))
+	}
+	if srv.AuthToken != "" && len(srv.AuthToken) < 32 {
+		return errors.New("MCP bearer token must be at least 32 characters (e.g. `openssl rand -hex 32`)")
+	}
 	switch *transport {
 	case "stdio":
 		return srv.ServeStdio(ctx, stdin, stdout)
@@ -1031,7 +1054,9 @@ func runWatch(ctx context.Context, defaultStoreDir string, args []string, stdout
 		OnRenewHook:  *onRenew,
 		Once:         *once,
 	}, func(rep *profile.RenewalCycleReport) {
-		_ = writeJSON(stdout, rep)
+		if err := writeJSON(stdout, rep); err != nil {
+			fmt.Fprintf(os.Stderr, "watch: write report: %v\n", err)
+		}
 	})
 }
 

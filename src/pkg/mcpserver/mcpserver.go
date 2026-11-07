@@ -1,6 +1,9 @@
 package mcpserver
 
 import (
+	"net"
+	"mime"
+	"crypto/subtle"
 	"bufio"
 	"context"
 	"crypto/tls"
@@ -25,7 +28,23 @@ import (
 // Server implements a Model Context Protocol (MCP) JSON-RPC 2.0 server over stdio and HTTP/HTTPS/mTLS.
 type Server struct {
 	Store *store.Store
+
+	// AuthToken, when non-empty, is required as "Authorization: Bearer <token>" on every
+	// HTTP JSON-RPC request (compared in constant time). /healthz stays unauthenticated.
+	AuthToken string
+
+	// AllowInsecureNoAuth lets ServeHTTP start without a bearer token or client CA. It is
+	// honoured only for loopback listen addresses.
+	AllowInsecureNoAuth bool
+
+	// AllowExecHooks permits tool arguments that execute host commands or weaken TLS
+	// (acme_obtain.dns_exec_hook, acme_obtain.skip_verify_tls). Off by default: an MCP
+	// caller is an agent, and these turn a certificate request into code execution.
+	AllowExecHooks bool
 }
+
+// maxHTTPBodyBytes caps a single JSON-RPC request body on the HTTP transport.
+const maxHTTPBodyBytes = 10 << 20
 
 // NewServer creates a new MCP Server bound to the given cryptographic store.
 func NewServer(s *store.Store) *Server {
@@ -684,6 +703,9 @@ func (srv *Server) dispatchTool(ctx context.Context, name string, rawArgs json.R
 		if err := decodeArgs(rawArgs, &req); err != nil {
 			return nil, err
 		}
+		if !srv.AllowExecHooks && (req.DNSExecHook != "" || req.SkipVerifyTLS) {
+			return nil, errors.New("dns_exec_hook and skip_verify_tls are disabled over MCP; start the server with --allow-exec-hooks to permit them")
+		}
 		return acme.ObtainCertificate(ctx, srv.Store, req)
 
 	case "target_list":
@@ -745,6 +767,14 @@ func (srv *Server) dispatchTool(ctx context.Context, name string, rawArgs json.R
 		}
 		if err != nil {
 			return nil, err
+		}
+		if !srv.AllowExecHooks {
+			// Same gate as acme_obtain: a manifest must not smuggle host command execution.
+			for _, ac := range spec.ACMECerts {
+				if ac.DNSExecHook != "" || ac.SkipVerifyTLS {
+					return nil, fmt.Errorf("acme_certs[%q]: dns_exec_hook and skip_verify_tls are disabled over MCP; start the server with --allow-exec-hooks to permit them", ac.Name)
+				}
+			}
 		}
 		return profile.Apply(ctx, srv.Store, spec)
 
@@ -987,9 +1017,25 @@ func (srv *Server) NewHTTPHandler() http.Handler {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		body, err := io.ReadAll(io.LimitReader(r.Body, 10*1024*1024))
+		// Browsers attach Origin to cross-site POSTs; MCP clients do not. Refusing it (and
+		// requiring a JSON content type, which forces a CORS preflight) blocks drive-by and
+		// DNS-rebinding requests from web pages to a loopback MCP server.
+		if r.Header.Get("Origin") != "" {
+			http.Error(w, "cross-origin requests are not allowed", http.StatusForbidden)
+			return
+		}
+		if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt != "application/json" {
+			http.Error(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
+			return
+		}
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxHTTPBodyBytes))
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			var mbe *http.MaxBytesError
+			if errors.As(err, &mbe) {
+				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+				return
+			}
+			http.Error(w, "read request body failed", http.StatusBadRequest)
 			return
 		}
 		resp, err := srv.HandleJSONRPC(r.Context(), body)
@@ -1004,17 +1050,70 @@ func (srv *Server) NewHTTPHandler() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(resp)
 	}
-	mux.HandleFunc("/", handleRPC)
-	mux.HandleFunc("/mcp", handleRPC)
+	authed := srv.requireBearer(handleRPC)
+	mux.HandleFunc("/", authed)
+	mux.HandleFunc("/mcp", authed)
 	return mux
+}
+
+func (srv *Server) requireBearer(next http.HandlerFunc) http.HandlerFunc {
+	if srv.AuthToken == "" {
+		return next
+	}
+	want := []byte("Bearer " + srv.AuthToken)
+	return func(w http.ResponseWriter, r *http.Request) {
+		got := []byte(r.Header.Get("Authorization"))
+		if subtle.ConstantTimeCompare(got, want) != 1 {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="mgtls-mcp"`)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next(w, r)
+	}
+}
+
+func isLoopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // ServeHTTP starts an HTTP, HTTPS, or mutual-TLS (mTLS) MCP server on addr.
 func (srv *Server) ServeHTTP(ctx context.Context, addr, certFile, keyFile, clientCAFile string) error {
+	useTLS := certFile != "" && keyFile != ""
+	if (certFile == "") != (keyFile == "") {
+		return errors.New("--tls-cert and --tls-key must be given together")
+	}
+	if clientCAFile != "" && !useTLS {
+		return errors.New("--client-ca requires --tls-cert and --tls-key")
+	}
+	authenticated := srv.AuthToken != "" || clientCAFile != ""
+	if !authenticated {
+		if !srv.AllowInsecureNoAuth {
+			return errors.New("refusing to serve MCP over HTTP without authentication: set MGTLS_MCP_TOKEN (bearer token) or --client-ca (mTLS); --insecure-no-auth is allowed only on loopback")
+		}
+		if !isLoopbackAddr(addr) {
+			return fmt.Errorf("--insecure-no-auth is only allowed on a loopback address, not %q", addr)
+		}
+	}
+	if !useTLS && !isLoopbackAddr(addr) {
+		return fmt.Errorf("refusing plaintext HTTP on non-loopback address %q: provide --tls-cert/--tls-key", addr)
+	}
+
 	httpSrv := &http.Server{
 		Addr:              addr,
 		Handler:           srv.NewHTTPHandler(),
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      10 * time.Minute, // ACME orders can legitimately take minutes
+		IdleTimeout:       2 * time.Minute,
+		MaxHeaderBytes:    64 << 10,
 	}
 
 	if certFile != "" && keyFile != "" {
