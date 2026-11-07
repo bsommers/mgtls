@@ -1057,6 +1057,7 @@ func runWatch(ctx context.Context, defaultStoreDir string, args []string, stdout
 	renewBefore := fs.Duration("renew-before", 720*time.Hour, "Renew certificates expiring within this duration (default 720h = 30d)")
 	onRenew := fs.String("on-renew", "", "Shell command hook to execute when any certificate is renewed")
 	once := fs.Bool("once", false, "Run a single renewal pass and exit")
+	reissueRevoked := fs.Bool("reissue-revoked", false, "Rotate revoked certificates (reissue with a new key) instead of honoring the revocation")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -1069,11 +1070,12 @@ func runWatch(ctx context.Context, defaultStoreDir string, args []string, stdout
 		return err
 	}
 	return profile.Watch(ctx, s, profile.WatchOptions{
-		ManifestPath: manifestPath,
-		Interval:     *interval,
-		RenewBefore:  *renewBefore,
-		OnRenewHook:  *onRenew,
-		Once:         *once,
+		ManifestPath:   manifestPath,
+		Interval:       *interval,
+		RenewBefore:    *renewBefore,
+		OnRenewHook:    *onRenew,
+		Once:           *once,
+		ReissueRevoked: *reissueRevoked,
 	}, func(rep *profile.RenewalCycleReport) {
 		if err := writeJSON(stdout, rep); err != nil {
 			fmt.Fprintf(os.Stderr, "watch: write report: %v\n", err)
@@ -1094,6 +1096,7 @@ func runSystemd(defaultStoreDir string, args []string, stdout io.Writer) error {
 	renewBefore := fs.String("renew-before", "720h", "Renew window duration (e.g. 720h)")
 	onRenew := fs.String("on-renew", "", "Optional reload command hook on renewal")
 	outDir := fs.String("out", "", "Output directory for .service and .timer files")
+	reissueRevoked := fs.Bool("reissue-revoked", false, "Add --reissue-revoked to the unit (rotate revoked certificates)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -1102,14 +1105,15 @@ func runSystemd(defaultStoreDir string, args []string, stdout io.Writer) error {
 		return err
 	}
 	bundle, err := profile.GenerateSystemdUnits(s, profile.SystemdRequest{
-		UnitName:     *unitName,
-		BinaryPath:   *binPath,
-		ManifestPath: *manifestPath,
-		StoreDir:     s.BaseDir,
-		Calendar:     *calendar,
-		RenewBefore:  *renewBefore,
-		OnRenewHook:  *onRenew,
-		OutputDir:    *outDir,
+		UnitName:       *unitName,
+		BinaryPath:     *binPath,
+		ManifestPath:   *manifestPath,
+		StoreDir:       s.BaseDir,
+		Calendar:       *calendar,
+		RenewBefore:    *renewBefore,
+		OnRenewHook:    *onRenew,
+		OutputDir:      *outDir,
+		ReissueRevoked: *reissueRevoked,
 	})
 	if err != nil {
 		return err

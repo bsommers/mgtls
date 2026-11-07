@@ -107,7 +107,7 @@ Tiers follow `running-multi-lens-audits`: 0 = correctness/safety, 1 = robustness
 | # | Item | Proposed fix |
 |---|---|---|
 | P11 | Store-only `watch` (no `-f`) silently ignores expiring SSH and ACME certificates and never regenerates targets. | Renew them from stored metadata, or report them in `report.errors`. |
-| P12 | Revoked certificates are auto-reissued every cycle (`c.Revoked \|\| …`). That is a policy decision: rotation versus honoring revocation. | Add `renew_revoked: false` by default and report revoked items. **Needs owner decision.** |
+| P12 | Revoked certificates are auto-reissued every cycle (`c.Revoked \|\| …`). That is a policy decision: rotation versus honoring revocation. | **Done (owner decision: honor revocation, allow opt-in rotation).** Revoked certs are skipped by default and listed in `skipped_revoked`. `watch --reissue-revoked` (also available on `systemd generate`, and as `WatchOptions.ReissueRevoked`) rotates them. Tests: `TestRenewalCycleHonorsRevocationUnlessOptedIn`, `TestSystemdUnitReissueRevokedFlag`. |
 | P13 | `watch` flags: `--interval/--renew-before ≤ 0` silently fall back to defaults, and `-f` and `--manifest` both accepted with `-f` silently winning. `systemd generate` lacks the `-f` alias. | Validate the values and error on conflicts. |
 | P14 | MCP: no per-call timeout or concurrency cap. A stdio line over 10 MiB kills the server. `decodeArgs` is lenient (unknown fields, unbounded `valid_days`/`http_port`/`reason_code`). | Wrap dispatch in `context.WithTimeout`, add a semaphore, use `DisallowUnknownFields` and range checks. |
 | P15 | `prompts/get` interpolates caller arguments into prompt text unescaped, which allows prompt injection. | Quote or JSON-encode the arguments. |

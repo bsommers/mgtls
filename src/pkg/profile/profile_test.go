@@ -732,7 +732,7 @@ targets:
 	}
 
 	// 2. Store-only renewal mode (spec == nil)
-	storeRep, err := RunRenewalCycle(ctx, s, nil, 72*time.Hour, "")
+	storeRep, err := RunRenewalCycle(ctx, s, nil, 72*time.Hour, "", false)
 	if err != nil {
 		t.Fatalf("RunRenewalCycle(spec=nil): %v", err)
 	}

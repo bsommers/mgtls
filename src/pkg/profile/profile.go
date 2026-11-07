@@ -64,6 +64,9 @@ type WatchOptions struct {
 	RenewBefore  time.Duration `json:"renew_before"`
 	OnRenewHook  string        `json:"on_renew_hook,omitempty"`
 	Once         bool          `json:"once"`
+	// ReissueRevoked opts in to rotating revoked X.509 certificates: a revoked
+	// cert is reissued (new key, new serial) instead of being left revoked.
+	ReissueRevoked bool `json:"reissue_revoked,omitempty"`
 }
 
 // RenewalCycleReport summarizes a single autonomous renewal pass.
@@ -74,8 +77,11 @@ type RenewalCycleReport struct {
 	RenewedSSHCerts    []string  `json:"renewed_ssh_certs"`
 	RenewedACMECerts   []string  `json:"renewed_acme_certs"`
 	RegeneratedTargets []string  `json:"regenerated_targets"`
-	HookExecuted       bool      `json:"hook_executed"`
-	HookOutput         string    `json:"hook_output,omitempty"`
+	// SkippedRevoked lists revoked certificates that were deliberately not
+	// reissued (revocation is honored unless ReissueRevoked is set).
+	SkippedRevoked []string `json:"skipped_revoked"`
+	HookExecuted   bool     `json:"hook_executed"`
+	HookOutput     string   `json:"hook_output,omitempty"`
 	// Errors lists per-item failures; the cycle continues past them so one bad
 	// certificate cannot block renewal, target regeneration or the hook for others.
 	Errors []string `json:"errors,omitempty"`
@@ -94,6 +100,8 @@ type SystemdRequest struct {
 	RenewBefore  string `json:"renew_before"` // e.g. "720h" (30d)
 	OnRenewHook  string `json:"on_renew_hook,omitempty"`
 	OutputDir    string `json:"output_dir"`
+	// ReissueRevoked renders `--reissue-revoked` into ExecStart.
+	ReissueRevoked bool `json:"reissue_revoked,omitempty"`
 }
 
 // SystemdBundle holds paths and contents of generated systemd units.
@@ -559,7 +567,11 @@ func RunDoctor(s *store.Store, warnDays int) (*DoctorReport, error) {
 }
 
 // RunRenewalCycle inspects the store and manifest, renews any leaf certificates, self-signed certificates, SSH certificates, or ACME certificates expiring within renewBefore, regenerates targets if any renewal occurred, and optionally runs onRenewHook.
-func RunRenewalCycle(ctx context.Context, s *store.Store, spec *FleetSpec, renewBefore time.Duration, onRenewHook string) (*RenewalCycleReport, error) {
+//
+// Revoked X.509 certificates are not reissued (and are listed in
+// SkippedRevoked) unless reissueRevoked is true, so a revocation is not
+// silently undone by the next cycle.
+func RunRenewalCycle(ctx context.Context, s *store.Store, spec *FleetSpec, renewBefore time.Duration, onRenewHook string, reissueRevoked bool) (*RenewalCycleReport, error) {
 	if s == nil {
 		return nil, errors.New("store is nil")
 	}
@@ -584,12 +596,17 @@ func RunRenewalCycle(ctx context.Context, s *store.Store, spec *FleetSpec, renew
 		RenewedSSHCerts:    []string{},
 		RenewedACMECerts:   []string{},
 		RegeneratedTargets: []string{},
+		SkippedRevoked:     []string{},
 	}
 
 	var errs []error
 	certNeedsRenewal := make(map[string]bool)
 	for _, c := range m.Certs {
-		if c.Revoked || c.NotAfter.Before(cutoff) {
+		switch {
+		case c.Revoked && !reissueRevoked:
+			// Honor revocation: the record exists, so spec mode also skips it.
+			rep.SkippedRevoked = append(rep.SkippedRevoked, c.Name)
+		case c.Revoked || c.NotAfter.Before(cutoff):
 			certNeedsRenewal[c.Name] = true
 		}
 	}
@@ -742,7 +759,7 @@ func Watch(ctx context.Context, s *store.Store, opts WatchOptions, onCycle func(
 		}
 		spec = loaded
 	}
-	rep, err := RunRenewalCycle(ctx, s, spec, opts.RenewBefore, opts.OnRenewHook)
+	rep, err := RunRenewalCycle(ctx, s, spec, opts.RenewBefore, opts.OnRenewHook, opts.ReissueRevoked)
 	if onCycle != nil && rep != nil {
 		onCycle(rep)
 	}
@@ -776,7 +793,7 @@ func Watch(ctx context.Context, s *store.Store, opts WatchOptions, onCycle func(
 					reloadErr = fmt.Errorf("reload manifest (keeping previous spec): %w", lErr)
 				}
 			}
-			cycleRep, cycleErr := RunRenewalCycle(ctx, s, spec, opts.RenewBefore, opts.OnRenewHook)
+			cycleRep, cycleErr := RunRenewalCycle(ctx, s, spec, opts.RenewBefore, opts.OnRenewHook, opts.ReissueRevoked)
 			if cycleRep == nil {
 				cycleRep = &RenewalCycleReport{CheckedAt: time.Now().UTC()}
 				if cycleErr != nil {
@@ -855,6 +872,9 @@ func GenerateSystemdUnits(s *store.Store, req SystemdRequest) (*SystemdBundle, e
 	}
 	if strings.TrimSpace(req.OnRenewHook) != "" {
 		args = append(args, "--on-renew", req.OnRenewHook)
+	}
+	if req.ReissueRevoked {
+		args = append(args, "--reissue-revoked")
 	}
 	quoted := make([]string, len(args))
 	for i, a := range args {
