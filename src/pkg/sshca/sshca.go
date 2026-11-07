@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -45,7 +46,7 @@ type SignSSHRequest struct {
 	ExistingPubKey  string            `json:"existing_pub_key,omitempty" yaml:"existing_pub_key,omitempty"` // optional path to existing .pub
 	CriticalOptions map[string]string `json:"critical_options,omitempty" yaml:"critical_options,omitempty"`
 	Extensions      map[string]string `json:"extensions,omitempty" yaml:"extensions,omitempty"`
-	CASigner        ssh.Signer        `json:"-" yaml:"-"` // optional hardware/agent/KMS CA signer
+	CASigner        ssh.Signer        `json:"-" yaml:"-"`                                           // optional hardware/agent/KMS CA signer
 	AgentSocket     string            `json:"agent_socket,omitempty" yaml:"agent_socket,omitempty"` // optional SSH_AUTH_SOCK path for hardware/agent CA signing
 }
 
@@ -149,6 +150,9 @@ func CreateSSHCA(s *store.Store, req SSHCARequest) (*SSHCAResult, error) {
 	if strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("SSH CA name is required")
 	}
+	if err := store.ValidName("SSH CA", req.Name); err != nil {
+		return nil, err
+	}
 	caType := strings.ToLower(strings.TrimSpace(req.CAType))
 	if caType == "" {
 		caType = "user"
@@ -218,6 +222,9 @@ func SignSSHCert(s *store.Store, req SignSSHRequest) (*SignSSHResult, error) {
 	if strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("SSH certificate name is required")
 	}
+	if err := store.ValidName("SSH certificate", req.Name); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(req.CAName) == "" {
 		return nil, fmt.Errorf("SSH CA name is required")
 	}
@@ -265,6 +272,21 @@ func SignSSHCert(s *store.Store, req SignSSHRequest) (*SignSSHResult, error) {
 	if certType == "" {
 		certType = caRec.CAType
 	}
+	if caRec.CAType != "" && certType != caRec.CAType {
+		return nil, fmt.Errorf("SSH CA %q is a %s CA and cannot sign %s certificates", req.CAName, caRec.CAType, certType)
+	}
+	if len(req.Principals) == 0 {
+		// An empty ValidPrincipals list means "any user" / "any host" to OpenSSH.
+		return nil, fmt.Errorf("at least one principal is required (an SSH certificate with no principals is valid for every %s)", certType)
+	}
+	for _, p := range req.Principals {
+		if err := validatePrincipal(p, certType == "host"); err != nil {
+			return nil, err
+		}
+	}
+	if req.CASigner != nil && caRec.Fingerprint != "" && ssh.FingerprintSHA256(req.CASigner.PublicKey()) != caRec.Fingerprint {
+		return nil, fmt.Errorf("supplied CA signer does not match SSH CA %q fingerprint %s", req.CAName, caRec.Fingerprint)
+	}
 	var sshCertType uint32
 	switch certType {
 	case "user":
@@ -278,6 +300,12 @@ func SignSSHCert(s *store.Store, req SignSSHRequest) (*SignSSHResult, error) {
 	keyID := strings.TrimSpace(req.KeyID)
 	if keyID == "" {
 		keyID = req.Name
+	}
+	if hasControlChars(keyID) {
+		return nil, fmt.Errorf("SSH key ID must not contain control characters")
+	}
+	if req.ValidHours > maxSSHValidHours {
+		return nil, fmt.Errorf("valid_hours %d exceeds maximum %d", req.ValidHours, maxSSHValidHours)
 	}
 
 	validHours := req.ValidHours
@@ -468,6 +496,9 @@ func GenerateSSHConfigBundle(s *store.Store, req SSHConfigRequest) (*SSHConfigBu
 	if name == "" {
 		name = "default"
 	}
+	if err := store.ValidName("SSH config bundle", name); err != nil {
+		return nil, err
+	}
 
 	outDir := strings.TrimSpace(req.OutputDir)
 	if outDir == "" {
@@ -529,8 +560,22 @@ func GenerateSSHConfigBundle(s *store.Store, req SSHConfigRequest) (*SSHConfigBu
 	if len(principals) == 0 && userCertRec != nil && len(userCertRec.Principals) > 0 {
 		principals = userCertRec.Principals
 	}
-	if len(principals) == 0 {
-		principals = []string{"root", "admin"}
+	if len(principals) == 0 && strings.TrimSpace(req.UserCAName) != "" {
+		// Previously defaulted to root+admin, silently authorizing privileged logins.
+		return nil, fmt.Errorf("principals are required when trusting a user CA")
+	}
+	for _, p := range principals {
+		if err := validatePrincipal(p, false); err != nil {
+			return nil, err
+		}
+	}
+	for _, hp := range req.HostPatterns {
+		if !hostPatternRE.MatchString(hp) {
+			return nil, fmt.Errorf("invalid host pattern %q: allowed characters are letters, digits and . * ? ! : - _ [ ]", hp)
+		}
+	}
+	if hasControlChars(outDir) || strings.ContainsAny(outDir, " \t\"") {
+		return nil, fmt.Errorf("output dir %q must not contain whitespace, quotes or control characters (it is written unquoted into sshd/ssh config)", outDir)
 	}
 
 	authPrincipalsPath := filepath.Join(outDir, "authorized_principals")
@@ -613,4 +658,37 @@ func GenerateSSHConfigBundle(s *store.Store, req SSHConfigRequest) (*SSHConfigBu
 		AuthorizedPrincipals: authPrincipalsPath,
 		Files:                files,
 	}, nil
+}
+
+// maxSSHValidHours caps certificate lifetime (10 years) and keeps
+// time.Duration(validHours)*time.Hour far from int64 overflow.
+const maxSSHValidHours = 24 * 365 * 10
+
+var (
+	principalRE     = regexp.MustCompile(`^[A-Za-z0-9._@+-]{1,255}$`)
+	hostPrincipalRE = regexp.MustCompile(`^[A-Za-z0-9._@+*?-]{1,255}$`)
+	hostPatternRE   = regexp.MustCompile(`^[A-Za-z0-9.*?!:_\[\]-]{1,255}$`)
+)
+
+// validatePrincipal rejects principals that are empty, contain whitespace, commas,
+// newlines (which would inject extra lines into authorized_principals). Wildcards
+// (* ?) are allowed only for host certificates, where OpenSSH clients match them.
+func validatePrincipal(p string, host bool) error {
+	re := principalRE
+	if host {
+		re = hostPrincipalRE
+	}
+	if !re.MatchString(p) {
+		return fmt.Errorf("invalid SSH principal %q: use letters, digits and . _ @ + -", p)
+	}
+	return nil
+}
+
+func hasControlChars(v string) bool {
+	for _, r := range v {
+		if r < 0x20 || r == 0x7f {
+			return true
+		}
+	}
+	return false
 }

@@ -330,7 +330,11 @@ func TestSSHCALifecycleAndCertVerification(t *testing.T) {
 		t.Fatalf("expected error when inspecting plain public key as SSH certificate")
 	}
 	// GenerateSSHConfigBundle with default OutputDir
-	if _, err := GenerateSSHConfigBundle(st, SSHConfigRequest{Name: "default-dir-bundle", UserCAName: "prod-user-ca"}); err != nil {
+	// Trusting a user CA without explicit principals must be refused (no silent root/admin default).
+	if _, err := GenerateSSHConfigBundle(st, SSHConfigRequest{Name: "no-principals", UserCAName: "prod-user-ca"}); err == nil {
+		t.Fatalf("expected error when trusting a user CA without principals")
+	}
+	if _, err := GenerateSSHConfigBundle(st, SSHConfigRequest{Name: "default-dir-bundle", UserCAName: "prod-user-ca", Principals: []string{"ops"}}); err != nil {
 		t.Fatalf("GenerateSSHConfigBundle default dir: %v", err)
 	}
 
