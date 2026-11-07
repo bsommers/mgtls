@@ -607,4 +607,3 @@ func TestPKINegativeAndEdgeCases(t *testing.T) {
 		t.Fatalf("VerifyChain for hardware-signed leaf failed: %+v, err=%v", vHW, err)
 	}
 }
-

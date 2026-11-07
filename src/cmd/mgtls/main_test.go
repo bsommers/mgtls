@@ -257,4 +257,3 @@ func TestCLIFlagsHelpVersionAndNegativePaths(t *testing.T) {
 		}
 	}
 }
-

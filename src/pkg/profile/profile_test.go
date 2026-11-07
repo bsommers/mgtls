@@ -757,5 +757,3 @@ targets:
 		t.Fatalf("missing timer file: %v", err)
 	}
 }
-
-

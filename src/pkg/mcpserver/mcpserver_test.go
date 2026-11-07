@@ -517,13 +517,13 @@ certs:
 	}
 	srv.AllowExecHooks = true
 	acmeRes := callToolJSON(t, srv, "acme_obtain", map[string]any{
-		"name":             "mcp-acme-cert",
-		"provider":         "custom",
-		"directory_url":    mockACME.DirectoryURL(),
-		"email":            "mcp@internal",
-		"domains":          []string{"mcp.internal"},
-		"challenge_type":   "dns-01",
-		"skip_verify_tls":  true,
+		"name":            "mcp-acme-cert",
+		"provider":        "custom",
+		"directory_url":   mockACME.DirectoryURL(),
+		"email":           "mcp@internal",
+		"domains":         []string{"mcp.internal"},
+		"challenge_type":  "dns-01",
+		"skip_verify_tls": true,
 	})
 	if rec, _ := acmeRes["record"].(map[string]any); rec["name"] != "mcp-acme-cert" {
 		t.Fatalf("unexpected acme_obtain result: %+v", acmeRes)
@@ -617,4 +617,3 @@ certs:
 		t.Errorf("expected 202 Accepted for notification over HTTP, got %d", recNotif.Code)
 	}
 }
-

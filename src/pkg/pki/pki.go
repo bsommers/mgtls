@@ -33,8 +33,8 @@ type CARequest struct {
 	CommonName   string        `json:"common_name" yaml:"common_name"`
 	Organization string        `json:"organization,omitempty" yaml:"organization,omitempty"`
 	Country      string        `json:"country,omitempty" yaml:"country,omitempty"`
-	ParentCA     string        `json:"parent_ca,omitempty" yaml:"parent_ca,omitempty"` // empty = Root CA, non-empty = Intermediate CA signed by ParentCA
-	Algorithm    string        `json:"algorithm,omitempty" yaml:"algorithm,omitempty"` // ed25519 (default), ecdsa-p256, ecdsa-p384, rsa-2048, rsa-4096
+	ParentCA     string        `json:"parent_ca,omitempty" yaml:"parent_ca,omitempty"`   // empty = Root CA, non-empty = Intermediate CA signed by ParentCA
+	Algorithm    string        `json:"algorithm,omitempty" yaml:"algorithm,omitempty"`   // ed25519 (default), ecdsa-p256, ecdsa-p384, rsa-2048, rsa-4096
 	ValidDays    int           `json:"valid_days,omitempty" yaml:"valid_days,omitempty"` // default 3650 for root, 1825 for intermediate
 	Signer       crypto.Signer `json:"-" yaml:"-"`                                       // optional hardware/KMS/HSM signer seam (private key never written to disk)
 	ParentSigner crypto.Signer `json:"-" yaml:"-"`                                       // optional hardware/KMS/HSM signer for ParentCA

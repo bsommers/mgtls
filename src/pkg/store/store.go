@@ -18,14 +18,14 @@ type Store struct {
 
 // Manifest tracks all managed PKI, SSH, ACME, and Target artifacts in the store.
 type Manifest struct {
-	Version   string         `json:"version"`
-	UpdatedAt time.Time      `json:"updated_at"`
-	CAs       []CARecord     `json:"cas"`
-	Certs     []CertRecord   `json:"certs"`
-	SSHCAs    []SSHCARecord  `json:"ssh_cas"`
+	Version   string          `json:"version"`
+	UpdatedAt time.Time       `json:"updated_at"`
+	CAs       []CARecord      `json:"cas"`
+	Certs     []CertRecord    `json:"certs"`
+	SSHCAs    []SSHCARecord   `json:"ssh_cas"`
 	SSHCerts  []SSHCertRecord `json:"ssh_certs"`
-	ACMECerts []ACMERecord   `json:"acme_certs"`
-	Targets   []TargetRecord `json:"targets"`
+	ACMECerts []ACMERecord    `json:"acme_certs"`
+	Targets   []TargetRecord  `json:"targets"`
 }
 
 type CARecord struct {

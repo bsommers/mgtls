@@ -1,16 +1,16 @@
 package main
 
 import (
-	"os/signal"
-	"syscall"
-	"errors"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/sysadmin/mgtls/src/pkg/acme"
@@ -541,10 +541,10 @@ func runCert(defaultStoreDir string, args []string, stdout io.Writer) error {
 			return err
 		}
 		return writeJSON(stdout, map[string]any{
-			"revoked":   true,
-			"ca":        *caName,
-			"cert":      *certName,
-			"crl_path":  crlPath,
+			"revoked":  true,
+			"ca":       *caName,
+			"cert":     *certName,
+			"crl_path": crlPath,
 		})
 
 	default:

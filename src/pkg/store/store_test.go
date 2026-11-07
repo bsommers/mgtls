@@ -237,4 +237,3 @@ func TestStoreDefaultBaseDirGettersUpsertReplaceAndCorruptedManifest(t *testing.
 		t.Fatalf("expected WritePublic traversal error, got %v", err)
 	}
 }
-

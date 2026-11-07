@@ -1,17 +1,17 @@
 package mcpserver
 
 import (
-	"net"
-	"mime"
-	"crypto/subtle"
 	"bufio"
 	"context"
+	"crypto/subtle"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"mime"
+	"net"
 	"net/http"
 	"os"
 	"strings"

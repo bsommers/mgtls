@@ -1,7 +1,6 @@
 package profile
 
 import (
-	"regexp"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -10,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -728,8 +728,6 @@ func RunRenewalCycle(ctx context.Context, s *store.Store, spec *FleetSpec, renew
 	}
 	return rep, errors.Join(errs...)
 }
-
-
 
 // Watch runs RunRenewalCycle immediately and then every opts.Interval until ctx is canceled (or returns after 1 pass when opts.Once is true).
 func Watch(ctx context.Context, s *store.Store, opts WatchOptions, onCycle func(*RenewalCycleReport)) error {
