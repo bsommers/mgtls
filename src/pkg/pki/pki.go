@@ -275,6 +275,9 @@ func CreateCA(s *store.Store, req CARequest) (*CAResult, error) {
 	if strings.TrimSpace(req.Name) == "" {
 		return nil, errors.New("CA name is required")
 	}
+	if err := store.ValidName("CA", req.Name); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(req.CommonName) == "" {
 		req.CommonName = req.Name
 	}
@@ -583,6 +586,9 @@ func IssueCert(s *store.Store, req CertRequest) (*CertResult, error) {
 	if strings.TrimSpace(req.Name) == "" {
 		return nil, errors.New("certificate name is required")
 	}
+	if err := store.ValidName("certificate", req.Name); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(req.CAName) == "" {
 		return nil, errors.New("CA name is required")
 	}
@@ -726,6 +732,9 @@ func IssueSelfSigned(s *store.Store, req SelfSignedRequest) (*CertResult, error)
 	}
 	if strings.TrimSpace(req.Name) == "" {
 		return nil, errors.New("certificate name is required")
+	}
+	if err := store.ValidName("certificate", req.Name); err != nil {
+		return nil, err
 	}
 	if strings.TrimSpace(req.CommonName) == "" {
 		req.CommonName = req.Name
@@ -1126,29 +1135,45 @@ func GenerateTrustScript(caCertPath, name string) (map[string]string, error) {
 	if strings.TrimSpace(caCertPath) == "" {
 		return nil, errors.New("caCertPath is required")
 	}
+	for _, r := range caCertPath {
+		if r < 0x20 || r == 0x7f {
+			return nil, errors.New("caCertPath must not contain control characters")
+		}
+	}
 	safeName := sanitizeTrustAnchorName(name)
+	// Go's %q is not shell quoting: "$(…)", backticks and $VAR still expand inside
+	// double quotes. POSIX single quotes and PowerShell single quotes are literal.
+	sh := ShellQuote(caCertPath)
+	ps := "'" + strings.ReplaceAll(caCertPath, "'", "''") + "'"
 
 	scripts := map[string]string{
 		"debian": fmt.Sprintf(
-			"sudo cp %q /usr/local/share/ca-certificates/%s.crt && sudo update-ca-certificates",
-			caCertPath, safeName,
+			"sudo cp -- %s /usr/local/share/ca-certificates/%s.crt && sudo update-ca-certificates",
+			sh, safeName,
 		),
 		"rhel": fmt.Sprintf(
-			"sudo cp %q /etc/pki/ca-trust/source/anchors/%s.crt && sudo update-ca-trust extract",
-			caCertPath, safeName,
+			"sudo cp -- %s /etc/pki/ca-trust/source/anchors/%s.crt && sudo update-ca-trust extract",
+			sh, safeName,
 		),
 		"arch": fmt.Sprintf(
-			"sudo trust anchor --store %q",
-			caCertPath,
+			"sudo trust anchor --store -- %s",
+			sh,
 		),
 		"macos": fmt.Sprintf(
-			"sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain %q",
-			caCertPath,
+			"sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain %s",
+			sh,
 		),
 		"windows": fmt.Sprintf(
-			"Import-Certificate -FilePath %q -CertStoreLocation Cert:\\LocalMachine\\Root",
-			caCertPath,
+			"Import-Certificate -FilePath %s -CertStoreLocation Cert:\\LocalMachine\\Root",
+			ps,
 		),
 	}
 	return scripts, nil
+}
+
+// ShellQuote returns s as a single POSIX shell word: it is wrapped in single quotes,
+// and each embedded single quote closes the quote, emits a backslash-escaped quote,
+// and reopens it. Nothing inside is expanded by sh or bash.
+func ShellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
