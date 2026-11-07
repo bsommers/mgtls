@@ -132,8 +132,11 @@ func New(baseDir string) (*Store, error) {
 
 // Init creates the workspace directory tree and initializes manifest.json if absent.
 func (s *Store) Init() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	unlock, err := s.lockManifest()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 
 	dirs := []string{
 		s.BaseDir,
@@ -166,6 +169,26 @@ func (s *Store) Init() error {
 	return nil
 }
 
+// lockManifest serializes manifest read-modify-write cycles both within this process
+// (mutex) and across processes (advisory lock on <BaseDir>/.lock), so concurrent
+// `mgtls watch`, `mgtls mcp serve` and CLI invocations cannot lose each other's updates.
+func (s *Store) lockManifest() (func(), error) {
+	s.mu.Lock()
+	if err := os.MkdirAll(s.BaseDir, 0700); err != nil {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("mkdir store %s: %w", s.BaseDir, err)
+	}
+	release, err := lockFile(filepath.Join(s.BaseDir, ".lock"))
+	if err != nil {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("lock store %s: %w", s.BaseDir, err)
+	}
+	return func() {
+		release()
+		s.mu.Unlock()
+	}, nil
+}
+
 // Path resolves a relative path inside the store.
 func (s *Store) Path(elem ...string) string {
 	parts := append([]string{s.BaseDir}, elem...)
@@ -183,6 +206,9 @@ func (s *Store) SafePath(elem ...string) (string, error) {
 }
 
 // WriteKey writes sensitive key material with strict 0600 permissions.
+// The file is written to a fresh O_EXCL temp file in the destination directory and
+// renamed into place, so key bytes are never visible under a looser mode and a
+// pre-existing symlink at the destination is replaced rather than followed.
 func (s *Store) WriteKey(relPath string, data []byte) (string, error) {
 	full, err := s.SafePath(relPath)
 	if err != nil {
@@ -191,11 +217,8 @@ func (s *Store) WriteKey(relPath string, data []byte) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(full), 0700); err != nil {
 		return "", fmt.Errorf("mkdir parent for key %s: %w", relPath, err)
 	}
-	if err := os.WriteFile(full, data, 0600); err != nil {
+	if err := WriteFileAtomic(full, data, 0600); err != nil {
 		return "", fmt.Errorf("write key %s: %w", relPath, err)
-	}
-	if err := os.Chmod(full, 0600); err != nil {
-		return "", fmt.Errorf("chmod key %s: %w", relPath, err)
 	}
 	return full, nil
 }
@@ -209,13 +232,51 @@ func (s *Store) WritePublic(relPath string, data []byte) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
 		return "", fmt.Errorf("mkdir parent for public file %s: %w", relPath, err)
 	}
-	if err := os.WriteFile(full, data, 0644); err != nil {
+	if err := WriteFileAtomic(full, data, 0644); err != nil {
 		return "", fmt.Errorf("write public file %s: %w", relPath, err)
 	}
-	if err := os.Chmod(full, 0644); err != nil {
-		return "", fmt.Errorf("chmod public file %s: %w", relPath, err)
-	}
 	return full, nil
+}
+
+// WriteFileAtomic writes data to path via a uniquely named temp file (created with
+// O_EXCL at the final mode) in the same directory, fsyncs it, and renames it into place.
+// Rename replaces a symlink at path instead of writing through it.
+func WriteFileAtomic(path string, data []byte, mode os.FileMode) error {
+	dir := filepath.Dir(path)
+	f, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	cleanup := func() { _ = os.Remove(tmp) }
+	if err := f.Chmod(mode); err != nil {
+		f.Close()
+		cleanup()
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		cleanup()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		cleanup()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		cleanup()
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		cleanup()
+		return err
+	}
+	if d, err := os.Open(dir); err == nil {
+		_ = d.Sync()
+		d.Close()
+	}
+	return nil
 }
 
 // LoadManifest reads the current manifest from disk (initializing if needed).
@@ -223,8 +284,11 @@ func (s *Store) LoadManifest() (*Manifest, error) {
 	if err := s.Init(); err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	unlock, err := s.lockManifest()
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	return s.loadManifestLocked()
 }
 
@@ -247,20 +311,18 @@ func (s *Store) saveManifestLocked(m *Manifest) error {
 	if err != nil {
 		return fmt.Errorf("marshal manifest: %w", err)
 	}
-	tmpPath := filepath.Join(s.BaseDir, "manifest.json.tmp")
-	finalPath := filepath.Join(s.BaseDir, "manifest.json")
-	if err := os.WriteFile(tmpPath, raw, 0600); err != nil {
-		return fmt.Errorf("write manifest tmp: %w", err)
-	}
-	return os.Rename(tmpPath, finalPath)
+	return WriteFileAtomic(filepath.Join(s.BaseDir, "manifest.json"), raw, 0600)
 }
 
 func (s *Store) UpsertCA(rec CARecord) error {
 	if err := s.Init(); err != nil {
 		return err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	unlock, err := s.lockManifest()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	m, err := s.loadManifestLocked()
 	if err != nil {
 		return err
@@ -297,8 +359,11 @@ func (s *Store) UpsertCert(rec CertRecord) error {
 	if err := s.Init(); err != nil {
 		return err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	unlock, err := s.lockManifest()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	m, err := s.loadManifestLocked()
 	if err != nil {
 		return err
@@ -335,8 +400,11 @@ func (s *Store) UpsertSSHCA(rec SSHCARecord) error {
 	if err := s.Init(); err != nil {
 		return err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	unlock, err := s.lockManifest()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	m, err := s.loadManifestLocked()
 	if err != nil {
 		return err
@@ -373,8 +441,11 @@ func (s *Store) UpsertSSHCert(rec SSHCertRecord) error {
 	if err := s.Init(); err != nil {
 		return err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	unlock, err := s.lockManifest()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	m, err := s.loadManifestLocked()
 	if err != nil {
 		return err
@@ -397,8 +468,11 @@ func (s *Store) UpsertACME(rec ACMERecord) error {
 	if err := s.Init(); err != nil {
 		return err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	unlock, err := s.lockManifest()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	m, err := s.loadManifestLocked()
 	if err != nil {
 		return err
@@ -421,8 +495,11 @@ func (s *Store) UpsertTarget(rec TargetRecord) error {
 	if err := s.Init(); err != nil {
 		return err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	unlock, err := s.lockManifest()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	m, err := s.loadManifestLocked()
 	if err != nil {
 		return err
