@@ -12,6 +12,9 @@
 2. **HTTP / HTTPS / mTLS (`--http <addr>`)**:
    - Exposes `POST /mcp` (and `/`) accepting `application/json` JSON-RPC 2.0 requests, plus `GET /healthz`.
    - Supports TLS encryption (`--tls-cert`, `--tls-key`) and strict mutual TLS client verification (`--client-ca`) enforcing TLS 1.2+ and `tls.RequireAndVerifyClientCert`.
+   - **Authentication is mandatory**: either mTLS (`--client-ca`) or a bearer token (`MGTLS_MCP_TOKEN` or `--token-file`, >= 32 chars, constant-time compared). `--insecure-no-auth` is accepted only for loopback addresses; plaintext HTTP is refused on non-loopback addresses.
+   - Rejects requests with an `Origin` header (403), a non-`application/json` `Content-Type` (415), or a body over 10 MiB (413).
+   - `acme_obtain.dns_exec_hook` / `skip_verify_tls` require `--allow-exec-hooks`.
 
 ```mermaid
 sequenceDiagram

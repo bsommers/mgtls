@@ -223,7 +223,17 @@ Run `mgtls` as an MCP Server over `stdio` (for Claude Desktop, Cursor, Windsurf)
   --tls-cert .mgtls/certs/api-srv/fullchain.pem \
   --tls-key .mgtls/certs/api-srv/key.pem \
   --client-ca .mgtls/certs/api-srv/ca-chain.pem
+
+# Bearer-token transport (loopback, no mTLS): token must be >= 32 chars
+MGTLS_MCP_TOKEN="$(openssl rand -hex 32)" ./bin/mgtls --store-dir .mgtls mcp serve --transport http
 ```
+
+The HTTP transport **refuses to start without authentication**: pass `--client-ca` (mTLS) or set
+`MGTLS_MCP_TOKEN` / `--token-file` (clients send `Authorization: Bearer <token>`). Plaintext HTTP is only
+allowed on loopback, and `--insecure-no-auth` is honoured only on loopback. Requests carrying an `Origin`
+header or a non-`application/json` body are rejected (blocks browser drive-by / DNS-rebinding).
+`acme_obtain` arguments `dns_exec_hook` and `skip_verify_tls` are disabled over MCP unless the server is
+started with `--allow-exec-hooks`.
 
 ---
 
