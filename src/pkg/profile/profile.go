@@ -73,6 +73,7 @@ type RenewalCycleReport struct {
 	RenewedSSHCerts    []string  `json:"renewed_ssh_certs"`
 	RenewedACMECerts   []string  `json:"renewed_acme_certs"`
 	RegeneratedTargets []string  `json:"regenerated_targets"`
+	ExternalExpiring   []string  `json:"external_expiring,omitempty"` // CSR-signed certs needing a fresh CSR from their owner
 	HookExecuted       bool      `json:"hook_executed"`
 	HookOutput         string    `json:"hook_output,omitempty"`
 }
@@ -439,7 +440,10 @@ func RunDoctor(s *store.Store, warnDays int) (*DoctorReport, error) {
 
 	for _, cert := range m.Certs {
 		certOK := checkPublicFile("cert", cert.Name, "certificate", cert.CertPath)
-		keyOK := checkKeyFile("cert", cert.Name, cert.KeyPath)
+		keyOK := true
+		if !cert.External { // CSR-signed certs have no key in the store by design
+			keyOK = checkKeyFile("cert", cert.Name, cert.KeyPath)
+		}
 		if cert.Revoked {
 			addFinding(DoctorFinding{
 				Severity: "warning",
@@ -582,6 +586,11 @@ func RunRenewalCycle(ctx context.Context, s *store.Store, spec *FleetSpec, renew
 	certNeedsRenewal := make(map[string]bool)
 	for _, c := range m.Certs {
 		if c.Revoked || c.NotAfter.Before(cutoff) {
+			if c.External {
+				// mgtls never held this leaf key; only the owner can renew via a new CSR.
+				rep.ExternalExpiring = append(rep.ExternalExpiring, c.Name)
+				continue
+			}
 			certNeedsRenewal[c.Name] = true
 		}
 	}

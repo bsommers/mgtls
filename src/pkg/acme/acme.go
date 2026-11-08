@@ -15,6 +15,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -803,7 +804,8 @@ func (c *acmeClient) downloadCertificate(ctx context.Context, certURL string) ([
 func loadOrCreateAccountKey(s *store.Store, name string) (*ecdsa.PrivateKey, string, error) {
 	rel := filepath.Join("acme", name, "account-key.pem")
 	full := s.Path(rel)
-	if raw, err := os.ReadFile(full); err == nil {
+	raw, rerr := store.ReadSecret(full)
+	if rerr == nil {
 		block, _ := pem.Decode(raw)
 		if block != nil {
 			key, err := x509.ParseECPrivateKey(block.Bytes)
@@ -811,6 +813,9 @@ func loadOrCreateAccountKey(s *store.Store, name string) (*ecdsa.PrivateKey, str
 				return key, full, nil
 			}
 		}
+	} else if !errors.Is(rerr, os.ErrNotExist) {
+		// Never regenerate (and overwrite) an account key we merely failed to decrypt.
+		return nil, "", fmt.Errorf("load ACME account key: %w", rerr)
 	}
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -821,7 +826,7 @@ func loadOrCreateAccountKey(s *store.Store, name string) (*ecdsa.PrivateKey, str
 		return nil, "", err
 	}
 	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der})
-	path, err := s.WriteKey(rel, pemBytes)
+	path, err := s.WriteSecret(rel, pemBytes)
 	if err != nil {
 		return nil, "", err
 	}

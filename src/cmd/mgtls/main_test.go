@@ -290,6 +290,49 @@ func TestCLIFlagsHelpVersionAndNegativePaths(t *testing.T) {
 		}
 	}
 
+	// CSR + vault CLI workflow
+	{
+		csrDir := t.TempDir()
+		if _, err := runArgs("csr", "create", "--name", "ext", "--cn", "ext.internal", "--dns", "ext.internal", "--out-dir", csrDir); err != nil {
+			t.Fatalf("csr create: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(csrDir, "ext.key.pem")); err != nil {
+			t.Fatalf("csr create must write key locally: %v", err)
+		}
+		signOut, err := runArgs("--store-dir", storeDir, "csr", "sign", "--csr", filepath.Join(csrDir, "ext.csr.pem"), "--ca", "root-ca", "--role", "server", "--out", filepath.Join(csrDir, "ext.pem"))
+		if err != nil || !strings.Contains(signOut, `"external": true`) {
+			t.Fatalf("csr sign: err=%v out=%s", err, signOut)
+		}
+		if _, err := os.Stat(filepath.Join(csrDir, "ext.pem")); err != nil {
+			t.Fatalf("csr sign --out: %v", err)
+		}
+		// stdin form
+		csrRaw, _ := os.ReadFile(filepath.Join(csrDir, "ext.csr.pem"))
+		var o, e bytes.Buffer
+		if err := run(ctx, []string{"--store-dir", storeDir, "csr", "sign", "--csr", "-", "--name", "ext-stdin"}, bytes.NewReader(csrRaw), &o, &e); err != nil {
+			t.Fatalf("csr sign stdin: %v", err)
+		}
+		if out, err := runArgs("--store-dir", storeDir, "doctor"); err != nil && strings.Contains(out, "ext.internal") {
+			t.Fatalf("doctor must accept CSR-signed certs without keys: %s", out)
+		}
+		for _, sub := range []string{"status", "seal", "unseal", "rotate"} {
+			t.Setenv("MGTLS_PASSPHRASE", "cli-pass")
+			t.Setenv("MGTLS_NEW_PASSPHRASE", "cli-pass-2")
+			if out, err := runArgs("--store-dir", storeDir, "vault", sub); err != nil {
+				t.Fatalf("vault %s: %v %s", sub, err, out)
+			}
+			if sub == "seal" {
+				if out, _ := runArgs("--store-dir", storeDir, "vault", "status"); !strings.Contains(out, `"sealed": true`) {
+					t.Fatalf("expected sealed keys: %s", out)
+				}
+				if _, err := runArgs("--store-dir", storeDir, "cert", "issue", "--name", "after-seal", "--ca", "root-ca", "--dns", "a.internal"); err != nil {
+					t.Fatalf("issuing with sealed CA key: %v", err)
+				}
+			}
+		}
+		t.Setenv("MGTLS_PASSPHRASE", "")
+	}
+
 	// Negative CLI error paths
 	errCases := [][]string{
 		{"unknown-top-cmd"},
@@ -308,6 +351,12 @@ func TestCLIFlagsHelpVersionAndNegativePaths(t *testing.T) {
 		{"probe"},
 		{"ocsp"},
 		{"ocsp", "unknown-sub"},
+		{"csr"},
+		{"csr", "unknown-sub"},
+		{"csr", "sign"},
+		{"csr", "create"},
+		{"vault"},
+		{"vault", "unknown-sub"},
 		{"mcp", "serve", "--transport", "unsupported-proto"},
 	}
 	for _, tc := range errCases {

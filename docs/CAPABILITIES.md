@@ -2,10 +2,10 @@
 
 Machine-readable manifest: [`docs/capabilities.json`](capabilities.json)
 
-- **Total Capabilities**: `14`
-- **Operational**: `13`
+- **Total Capabilities**: `15`
+- **Operational**: `15`
 - **Beta**: `0`
-- **Planned**: `1`
+- **Planned**: `0`
 
 ## Operational Capabilities (`v1.2.0`)
 
@@ -24,9 +24,5 @@ Machine-readable manifest: [`docs/capabilities.json`](capabilities.json)
 | `CAP-HSM-001` | **Hardware-Backed Root CA, KMS & `ssh-agent` Signer Seams** (`crypto.Signer` & `ssh.Signer` non-exportable CA signing + `SSH_AUTH_SOCK` agent support) | `src/pkg/pki`, `src/pkg/sshca` | `operational` | `go test -race ./src/pkg/pki ./src/pkg/sshca` |
 | `CAP-PROBE-001` | **Live TLS & Mutual TLS Endpoint Prober & Cipher Auditor** (`mgtls probe --addr host:port`, `--strict`, and MCP tool `pki_probe`) | `src/pkg/pki` | `operational` | `go test -race ./src/pkg/pki` |
 | `CAP-OCSP-001` | **RFC 6960 OCSP Responder & Stapling Verification Engine** (`mgtls ocsp serve`, `mgtls ocsp verify`, RFC 6960 §4.2.2.2 Ed25519 delegated OCSP signing, and MCP tool `pki_ocsp_verify` — 20 MCP tools total) | `src/pkg/pki` | `operational` | `go test -race ./src/pkg/pki` |
-
-## Planned Capabilities (`v1.3.0+`)
-
-| ID | Capability | Target Version | Status |
-| :--- | :--- | :--- | :--- |
-| `CAP-CSR-001` | **PKCS#10 CSR Generation & External Signing Engine** | `v1.3.0` | `planned` |
+| `CAP-CSR-001` | **PKCS#10 CSR Workflow & External CA Signing** (`mgtls csr create`, `mgtls csr sign`, MCP tool `pki_csr_sign` — 21 MCP tools total; leaf key never held by mgtls) | `src/pkg/pki` | `operational` | `go test -race ./src/pkg/pki` |
+| `CAP-VAULT-001` | **Encrypted-at-Rest CA Key Vault** (AES-256-GCM envelope, scrypt/HKDF KEK via `MGTLS_PASSPHRASE`/`MGTLS_KEYFILE`, `mgtls vault status|seal|unseal|rotate`) | `src/pkg/store` | `operational` | `go test -race ./src/pkg/store` |

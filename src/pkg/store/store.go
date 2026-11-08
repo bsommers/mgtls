@@ -67,6 +67,7 @@ type CertRecord struct {
 	RevokedAt     time.Time `json:"revoked_at,omitempty"`
 	RevokeReason  int       `json:"revoke_reason,omitempty"`
 	Fingerprint   string    `json:"fingerprint"`
+	External      bool      `json:"external,omitempty"` // signed from an external CSR; mgtls does not hold the leaf private key
 }
 
 type SSHCARecord struct {

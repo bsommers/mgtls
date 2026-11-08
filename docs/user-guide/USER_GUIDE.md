@@ -284,3 +284,34 @@ mgtls doctor --warn-days 30
 | `mgtls status` | — | Display managed CAs, certificates, SSH certs, ACME certs, and targets |
 | `mgtls doctor` | `--warn-days <N>` | Audit store security permissions (`0600`), file presence, and expiry windows |
 | `mgtls mcp` | `serve [--http <addr>]` | Run the Model Context Protocol JSON-RPC 2.0 server (`stdio` or HTTP/HTTPS/mTLS) |
+
+---
+
+## CSR Workflow: Sign Without Holding the Key (`mgtls csr`)
+
+External workloads generate their private key locally and send only a CSR:
+
+```bash
+# On the workload host (key never leaves it)
+mgtls csr create --name web --cn web.internal --dns web.internal,alt.internal --out-dir ./pki
+#   -> ./pki/web.key.pem (0600), ./pki/web.csr.pem
+
+# On the CA host (or via MCP tool pki_csr_sign)
+mgtls csr sign --csr ./web.csr.pem --ca root-ca --role server --days 90 --out web-fullchain.pem
+cat web.csr.pem | mgtls csr sign --csr - --ca root-ca        # stdin form
+```
+
+Only the common name and SANs are taken from the CSR; any extensions it requests (e.g. `CA:TRUE`) are ignored. The certificate is recorded as `external` with no key in the store, so `mgtls watch` reports it under `external_expiring` rather than renewing it: the owner submits a fresh CSR (`csr create --key <existing>` reuses the same key).
+
+## Encrypted-at-Rest CA Keys (`mgtls vault`)
+
+```bash
+head -c 48 /dev/urandom | base64 > ~/.mgtls.key && chmod 600 ~/.mgtls.key
+export MGTLS_KEYFILE=~/.mgtls.key        # or MGTLS_PASSPHRASE='...'
+mgtls vault seal                          # encrypt existing CA / SSH CA / ACME account keys in place
+mgtls vault status                        # sealed vs unsealed per key
+MGTLS_NEW_KEYFILE=~/new.key mgtls vault rotate
+mgtls vault unseal                        # back to plaintext
+```
+
+With a credential set, new CA keys are sealed on creation, and every command that signs (`cert issue`, `csr sign`, `cert revoke`, `ocsp serve`, `watch`, `ssh sign-*`) must run with the same variable. `MGTLS_KEYFILE` wins over `MGTLS_PASSPHRASE`; prefer the keyfile (env vars are visible in `/proc`). Leaf-certificate keys are **not** encrypted: they are deployment artifacts that servers read directly. Losing the credential means losing the CA keys.

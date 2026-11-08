@@ -188,7 +188,7 @@ func loadCertAndKey(certPath, keyPath string) (*x509.Certificate, crypto.Signer,
 		return nil, nil, fmt.Errorf("parse cert %s: %w", certPath, err)
 	}
 
-	keyRaw, err := os.ReadFile(keyPath)
+	keyRaw, err := store.ReadSecret(keyPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read key %s: %w", keyPath, err)
 	}
@@ -424,7 +424,7 @@ func CreateCA(s *store.Store, req CARequest) (*CAResult, error) {
 	}
 	var keyPath string
 	if len(keyPEM) > 0 {
-		keyPath, err = s.WriteKey(filepath.Join(relDir, "key.pem"), keyPEM)
+		keyPath, err = s.WriteSecret(filepath.Join(relDir, "key.pem"), keyPEM)
 		if err != nil {
 			return nil, err
 		}

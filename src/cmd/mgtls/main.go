@@ -86,6 +86,10 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return runProbe(storeDir, rest, stdout)
 	case "ocsp":
 		return runOCSP(ctx, storeDir, rest, stdout)
+	case "csr":
+		return runCSR(storeDir, rest, stdin, stdout)
+	case "vault":
+		return runVault(storeDir, rest, stdout)
 	case "mcp":
 		return runMCP(ctx, storeDir, rest, stdin, stdout)
 	default:
@@ -131,6 +135,8 @@ Commands:
   systemd generate           Generate systemd .service & .timer units for unattended renewal
   probe                      Probe a live TLS/mTLS endpoint (protocol, cipher suite, peer chain, SANs & CA trust)
   ocsp <serve|verify>        RFC 6960 HTTP OCSP responder & certificate/stapling verifier
+  csr <create|sign>          PKCS#10 workflow: create key+CSR locally, sign a CSR with a managed CA (no leaf key held)
+  vault <status|seal|unseal|rotate>  Encrypt CA/SSH-CA/ACME-account private keys at rest (MGTLS_KEYFILE / MGTLS_PASSPHRASE)
   mcp serve                  Run the Model Context Protocol (MCP) JSON-RPC 2.0 server (stdio or HTTP/mTLS)
   guide                      View the full end-to-end onboarding & workflow guide
   version                    Print version
@@ -1190,4 +1196,114 @@ func runOCSP(ctx context.Context, defaultStoreDir string, args []string, stdout 
 	default:
 		return fmt.Errorf("unknown ocsp subcommand %q (expected serve or verify)", sub)
 	}
+}
+
+func runCSR(defaultStoreDir string, args []string, stdin io.Reader, stdout io.Writer) error {
+	if len(args) == 0 {
+		return errors.New("csr subcommand required: create or sign")
+	}
+	sub, rest := args[0], args[1:]
+	switch sub {
+	case "create":
+		fs := flag.NewFlagSet("csr create", flag.ContinueOnError)
+		name := fs.String("name", "", "CSR/key base file name (writes <name>.key.pem and <name>.csr.pem)")
+		cn := fs.String("cn", "", "Common Name (default: --name)")
+		org := fs.String("org", "", "Organization")
+		algo := fs.String("algo", "ecdsa-p256", "Key algorithm (ed25519, ecdsa-p256, ecdsa-p384, rsa-2048, rsa-4096)")
+		dns := fs.String("dns", "", "Comma-separated DNS SANs")
+		ips := fs.String("ip", "", "Comma-separated IP SANs")
+		uris := fs.String("uri", "", "Comma-separated URI SANs")
+		emails := fs.String("email", "", "Comma-separated Email SANs")
+		outDir := fs.String("out-dir", ".", "Output directory for the key and CSR")
+		existing := fs.String("key", "", "Reuse an existing PEM private key instead of generating one")
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		res, err := pki.CreateCSR(pki.CSRRequest{
+			Name: *name, CommonName: *cn, Organization: *org, Algorithm: *algo,
+			DNSNames: splitCSV(*dns), IPAddresses: splitCSV(*ips), URIs: splitCSV(*uris), Emails: splitCSV(*emails),
+			OutDir: *outDir, ExistingKey: *existing,
+		})
+		if err != nil {
+			return err
+		}
+		res.CSRPEM = "" // already on disk
+		return writeJSON(stdout, res)
+
+	case "sign":
+		fs := flag.NewFlagSet("csr sign", flag.ContinueOnError)
+		storeDir := fs.String("store-dir", defaultStoreDir, "Store directory")
+		csrPath := fs.String("csr", "", "Path to a PKCS#10 .csr.pem ('-' reads stdin)")
+		name := fs.String("name", "", "Certificate name in the store (default: CSR common name)")
+		caName := fs.String("ca", "root-ca", "Signing CA name")
+		role := fs.String("role", "mtls", "Role (server, client, mtls)")
+		days := fs.Int("days", 365, "Validity days")
+		out := fs.String("out", "", "Also write the signed certificate PEM to this path")
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		if *csrPath == "" {
+			return errors.New("--csr is required")
+		}
+		req := pki.SignCSRRequest{Name: *name, CAName: *caName, Role: *role, ValidDays: *days}
+		if *csrPath == "-" {
+			raw, err := io.ReadAll(io.LimitReader(stdin, 64<<10+1))
+			if err != nil {
+				return err
+			}
+			req.CSRPEM = string(raw)
+		} else {
+			req.CSRPath = *csrPath
+		}
+		s, err := store.New(*storeDir)
+		if err != nil {
+			return err
+		}
+		res, err := pki.SignCSR(s, req)
+		if err != nil {
+			return err
+		}
+		if *out != "" {
+			if err := os.WriteFile(*out, []byte(res.ChainPEM), 0o644); err != nil {
+				return fmt.Errorf("write --out: %w", err)
+			}
+		}
+		return writeJSON(stdout, res)
+
+	default:
+		return fmt.Errorf("unknown csr subcommand %q (expected create or sign)", sub)
+	}
+}
+
+func runVault(defaultStoreDir string, args []string, stdout io.Writer) error {
+	if len(args) == 0 {
+		return errors.New("vault subcommand required: status | seal | unseal | rotate")
+	}
+	sub, rest := args[0], args[1:]
+	fs := flag.NewFlagSet("vault "+sub, flag.ContinueOnError)
+	storeDir := fs.String("store-dir", defaultStoreDir, "Store directory")
+	if err := fs.Parse(rest); err != nil {
+		return err
+	}
+	s, err := store.New(*storeDir)
+	if err != nil {
+		return err
+	}
+	var rep *store.VaultReport
+	switch sub {
+	case "status":
+		rep, err = s.VaultStatus()
+	case "seal":
+		rep, err = s.SealAll()
+	case "unseal":
+		rep, err = s.UnsealAll()
+	case "rotate":
+		rep, err = s.RotateAll()
+	default:
+		return fmt.Errorf("unknown vault subcommand %q (expected status, seal, unseal or rotate)", sub)
+	}
+	if err != nil {
+		return err
+	}
+	return writeJSON(stdout, rep)
 }

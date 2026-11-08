@@ -759,3 +759,31 @@ targets:
 }
 
 
+
+func TestRenewalCycleSkipsExternalCSRCerts(t *testing.T) {
+	s, _ := store.New(t.TempDir())
+	if err := s.Init(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pki.CreateCA(s, pki.CARequest{Name: "ca", CommonName: "CA"}); err != nil {
+		t.Fatal(err)
+	}
+	c, err := pki.CreateCSR(pki.CSRRequest{Name: "ext", CommonName: "ext.internal", OutDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pki.SignCSR(s, pki.SignCSRRequest{CAName: "ca", CSRPEM: c.CSRPEM, ValidDays: 1}); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := RunRenewalCycle(context.Background(), s, nil, 72*time.Hour, "")
+	if err != nil {
+		t.Fatalf("renewal must not fail on key-less CSR certs: %v", err)
+	}
+	if len(rep.RenewedCerts) != 0 || len(rep.ExternalExpiring) != 1 || rep.ExternalExpiring[0] != "ext.internal" {
+		t.Fatalf("unexpected report: %+v", rep)
+	}
+	rec, _ := s.GetCert("ext.internal")
+	if rec.KeyPath != "" {
+		t.Fatal("external cert must not gain a key")
+	}
+}

@@ -520,6 +520,22 @@ func (srv *Server) listTools() []mcpTool {
 				},
 			},
 		},
+		{
+			Name:        "pki_csr_sign",
+			Description: "Sign an externally generated PKCS#10 CSR with a managed CA. The requester keeps the leaf private key; only CN/SANs are taken from the CSR (requested CA/EKU extensions are ignored). Returns the signed certificate and chain.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"ca_name":    map[string]any{"type": "string", "description": "Issuing CA name"},
+					"csr_pem":    map[string]any{"type": "string", "description": "Inline PEM PKCS#10 certificate request"},
+					"csr_path":   map[string]any{"type": "string", "description": "Or path to a .csr.pem file"},
+					"name":       map[string]any{"type": "string", "description": "Store name for the issued certificate (default: CSR common name)"},
+					"role":       map[string]any{"type": "string", "description": "server, client or mtls (default mtls)"},
+					"valid_days": map[string]any{"type": "integer", "description": "Validity in days (default 365)"},
+				},
+				"required": []string{"ca_name"},
+			},
+		},
 	}
 }
 
@@ -806,6 +822,13 @@ func (srv *Server) dispatchTool(ctx context.Context, name string, rawArgs json.R
 			return nil, err
 		}
 		return pki.VerifyOCSP(srv.Store, req)
+
+	case "pki_csr_sign":
+		var req pki.SignCSRRequest
+		if err := decodeArgs(rawArgs, &req); err != nil {
+			return nil, err
+		}
+		return pki.SignCSR(srv.Store, req)
 
 	default:
 		return nil, fmt.Errorf("unknown tool %q", name)

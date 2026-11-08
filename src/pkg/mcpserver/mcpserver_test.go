@@ -580,6 +580,8 @@ certs:
 		{"pki_inspect", map[string]any{"cert_name": "does-not-exist"}},
 		{"pki_probe", map[string]any{}},
 		{"pki_ocsp_verify", map[string]any{}},
+		{"pki_csr_sign", map[string]any{}},
+		{"pki_csr_sign", map[string]any{"ca_name": "root-ca", "csr_pem": "not a csr"}},
 	} {
 		res := callRPC(t, srv, "tools/call", map[string]any{
 			"name":      tc.name,

@@ -188,7 +188,7 @@ func CreateSSHCA(s *store.Store, req SSHCARequest) (*SSHCAResult, error) {
 
 	var privPath string
 	if len(privBytes) > 0 {
-		privPath, err = s.WriteKey(privRel, privBytes)
+		privPath, err = s.WriteSecret(privRel, privBytes)
 		if err != nil {
 			return nil, err
 		}
@@ -251,7 +251,7 @@ func SignSSHCert(s *store.Store, req SignSSHRequest) (*SignSSHResult, error) {
 			return nil, fmt.Errorf("no signer in ssh-agent matching CA %q fingerprint %s", req.CAName, caRec.Fingerprint)
 		}
 	} else {
-		caPrivRaw, rErr := os.ReadFile(caRec.PrivKeyPath)
+		caPrivRaw, rErr := store.ReadSecret(caRec.PrivKeyPath)
 		if rErr != nil {
 			return nil, fmt.Errorf("read SSH CA private key: %w", rErr)
 		}

@@ -5,6 +5,15 @@ All notable changes to `mgtls` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **PKCS#10 CSR Workflow (`src/pkg/pki/csr.go` — `CAP-CSR-001`)**: `mgtls csr create` (local key + CSR, refuses to overwrite keys, `--key` to reuse) and `mgtls csr sign` (`--csr file|-`, `--role`, `--days`, `--out`); MCP tool `pki_csr_sign` (21 tools). Verifies the CSR proof-of-possession signature, rejects RSA <2048 / ECDSA <P-256, takes only CN/SANs from the CSR (requested CA/EKU/key-usage extensions are ignored), caps validity at the CA's `NotAfter`. Issued certs are flagged `external` in the manifest and have no key path; `doctor` accepts them and `watch` reports them under `external_expiring` instead of attempting re-issuance.
+- **Encrypted-at-Rest Key Vault (`src/pkg/store/vault.go` — `CAP-VAULT-001`)**: set `MGTLS_KEYFILE` (preferred; >=32 bytes, mode 0600, HKDF-SHA256) or `MGTLS_PASSPHRASE` (scrypt N=32768) and CA, SSH CA, and ACME account private keys are stored as AES-256-GCM `MGTLS ENCRYPTED KEY` PEM envelopes. Reads transparently accept sealed or plaintext files. `mgtls vault status|seal|unseal|rotate` migrate in place (all-or-nothing, atomic replace; `rotate` uses `MGTLS_NEW_KEYFILE`/`MGTLS_NEW_PASSPHRASE`). Leaf-certificate keys are deliberately not encrypted (consumed by external software).
+
+### Fixed
+- ACME account key loading no longer regenerates (and overwrites) a key it merely failed to read/decrypt.
+
 ## [1.2.0] - 2026-11-06
 
 ### Added
