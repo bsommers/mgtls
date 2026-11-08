@@ -185,7 +185,8 @@ func TestAllCookbooksEndToEnd(t *testing.T) {
 				"openssh-fleet/sshd_config.d/mgtls-ca.conf",
 				"openssh-fleet/ssh_config.d/mgtls.conf",
 				"openssh-fleet/known_hosts",
-				"openssh-fleet/authorized_principals",
+				"openssh-fleet/auth_principals/sre",
+				"openssh-fleet/auth_principals/deploy",
 			},
 		},
 		{
@@ -479,7 +480,7 @@ exec "`+mgtlsBin+`" "${ARGS[@]}"
 			"examples/openssh-ca/generated-openssh-config/sshd_config.d/mgtls-ca.conf",
 			"examples/openssh-ca/generated-openssh-config/ssh_config.d/mgtls.conf",
 			"examples/openssh-ca/generated-openssh-config/known_hosts",
-			"examples/openssh-ca/generated-openssh-config/authorized_principals",
+			"examples/openssh-ca/generated-openssh-config/auth_principals/alice",
 			"examples/openssh-ca/generated-openssh-target/sshd_ca.conf",
 			"examples/openssh-ca/generated-openssh-target/deploy_ssh_ca.sh",
 		} {

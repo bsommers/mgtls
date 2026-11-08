@@ -510,14 +510,20 @@ certs:
 	// 4. acme_obtain tool against MockACMEServer
 	mockACME := acme.NewMockACMEServer()
 	defer mockACME.Close()
+	// skip_verify_tls / dns_exec_hook are refused unless the operator opts in.
+	deniedRaw, _ := json.Marshal(map[string]any{"name": "denied", "provider": "custom", "directory_url": mockACME.DirectoryURL(), "domains": []string{"mcp.internal"}, "skip_verify_tls": true})
+	if _, err := srv.dispatchTool(context.Background(), "acme_obtain", deniedRaw); err == nil || !strings.Contains(err.Error(), "disabled over MCP") {
+		t.Fatalf("expected acme_obtain skip_verify_tls to be refused by default, got %v", err)
+	}
+	srv.AllowExecHooks = true
 	acmeRes := callToolJSON(t, srv, "acme_obtain", map[string]any{
-		"name":             "mcp-acme-cert",
-		"provider":         "custom",
-		"directory_url":    mockACME.DirectoryURL(),
-		"email":            "mcp@internal",
-		"domains":          []string{"mcp.internal"},
-		"challenge_type":   "dns-01",
-		"skip_verify_tls":  true,
+		"name":            "mcp-acme-cert",
+		"provider":        "custom",
+		"directory_url":   mockACME.DirectoryURL(),
+		"email":           "mcp@internal",
+		"domains":         []string{"mcp.internal"},
+		"challenge_type":  "dns-01",
+		"skip_verify_tls": true,
 	})
 	if rec, _ := acmeRes["record"].(map[string]any); rec["name"] != "mcp-acme-cert" {
 		t.Fatalf("unexpected acme_obtain result: %+v", acmeRes)
@@ -606,9 +612,10 @@ certs:
 	}
 
 	recNotif := httptest.NewRecorder()
-	handler.ServeHTTP(recNotif, httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","method":"notifications/initialized"}`)))
+	notifReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","method":"notifications/initialized"}`))
+	notifReq.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(recNotif, notifReq)
 	if recNotif.Code != http.StatusAccepted {
 		t.Errorf("expected 202 Accepted for notification over HTTP, got %d", recNotif.Code)
 	}
 }
-

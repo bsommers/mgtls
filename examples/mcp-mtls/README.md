@@ -32,6 +32,8 @@ mgtls --store-dir .mgtls-mcp mcp serve \
   --client-ca .mgtls-mcp/certs/mcp-srv/ca-chain.pem
 ```
 
+> The HTTP transport requires authentication: `--client-ca` (as above) or a bearer token via `MGTLS_MCP_TOKEN`/`--token-file`.
+
 ### 3. Run the Custom Python MCP mTLS Server
 
 ```bash

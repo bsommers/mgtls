@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -51,7 +52,7 @@ type ObtainRequest struct {
 	WebrootDir    string   `json:"webroot_dir,omitempty" yaml:"webroot_dir,omitempty"`       // optional webroot for http-01
 	DNSExecHook   string   `json:"dns_exec_hook,omitempty" yaml:"dns_exec_hook,omitempty"`   // optional shell hook for dns-01
 	EABKID        string   `json:"eab_kid,omitempty" yaml:"eab_kid,omitempty"`
-	EABHMACKey    string   `json:"eab_hmac_key,omitempty" yaml:"eab_hmac_key,omitempty"`     // base64url HMAC key
+	EABHMACKey    string   `json:"eab_hmac_key,omitempty" yaml:"eab_hmac_key,omitempty"`       // base64url HMAC key
 	SkipVerifyTLS bool     `json:"skip_verify_tls,omitempty" yaml:"skip_verify_tls,omitempty"` // for local test ACME servers
 }
 
@@ -173,6 +174,9 @@ func ObtainCertificate(ctx context.Context, s *store.Store, req ObtainRequest) (
 	if req.Name == "" {
 		return nil, fmt.Errorf("ACME request name is required")
 	}
+	if err := store.ValidName("ACME certificate", req.Name); err != nil {
+		return nil, err
+	}
 	if len(req.Domains) == 0 {
 		return nil, fmt.Errorf("at least one domain is required")
 	}
@@ -266,6 +270,15 @@ func ObtainCertificate(ctx context.Context, s *store.Store, req ObtainRequest) (
 		if selected == nil {
 			return nil, fmt.Errorf("challenge type %q not offered for domain %q", req.ChallengeType, authz.Identifier.Value)
 		}
+		// The token and identifier come from the ACME server and are used as a file name
+		// (http-01 webroot), a URL path, a TXT record name and hook environment values.
+		// RFC 8555 §8.1 tokens are base64url; anything else is refused before use.
+		if !validACMEToken(selected.Token) {
+			return nil, fmt.Errorf("ACME server returned malformed challenge token %q", selected.Token)
+		}
+		if !containsFold(req.Domains, authz.Identifier.Value) {
+			return nil, fmt.Errorf("ACME server returned authorization for unrequested identifier %q", authz.Identifier.Value)
+		}
 
 		keyAuth := selected.Token + "." + client.thumbprint
 		domain := authz.Identifier.Value
@@ -332,6 +345,9 @@ func ObtainCertificate(ctx context.Context, s *store.Store, req ObtainRequest) (
 	if err != nil {
 		return nil, err
 	}
+	if _, _, err := validateIssuedCert(certPEM, leafKey, req.Domains); err != nil {
+		return nil, err
+	}
 
 	leafKeyDER, err := x509.MarshalECPrivateKey(leafKey)
 	if err != nil {
@@ -348,7 +364,10 @@ func ObtainCertificate(ctx context.Context, s *store.Store, req ObtainRequest) (
 		return nil, err
 	}
 
-	notBefore, notAfter := parseCertValidity(certPEM)
+	notBefore, notAfter, err := validateIssuedCert(certPEM, leafKey, req.Domains)
+	if err != nil {
+		return nil, err
+	}
 	rec := store.ACMERecord{
 		Name:          req.Name,
 		Provider:      prov.ID,
@@ -468,7 +487,7 @@ func setupHTTP01Solver(req ObtainRequest, token, keyAuth string) (func(), error)
 			}
 			return func() {}, fmt.Errorf("listen http-01 port %d: %w", req.HTTPPort, err)
 		}
-		srv := &http.Server{Handler: mux}
+		srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second}
 		go func() { _ = srv.Serve(ln) }()
 		cleanups = append(cleanups, func() { _ = srv.Close() })
 	}
@@ -505,6 +524,7 @@ func setupTLSALPN01Solver(req ObtainRequest, domain, keyAuth string) (func(), er
 			}
 			go func(c net.Conn) {
 				defer c.Close()
+				_ = c.SetDeadline(time.Now().Add(10 * time.Second))
 				if tc, ok := c.(*tls.Conn); ok {
 					_ = tc.Handshake()
 				}
@@ -537,7 +557,7 @@ func (c *acmeClient) fetchDirectory(ctx context.Context, dirURL string) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("fetch ACME directory HTTP %d", resp.StatusCode)
 	}
-	return json.NewDecoder(resp.Body).Decode(&c.dir)
+	return json.NewDecoder(io.LimitReader(resp.Body, maxACMEResponseBytes)).Decode(&c.dir)
 }
 
 func (c *acmeClient) getNonce(ctx context.Context) (string, error) {
@@ -631,12 +651,19 @@ func (c *acmeClient) postJWS(ctx context.Context, url string, payload any, useJW
 	if n := resp.Header.Get("Replay-Nonce"); n != "" {
 		c.nonce = n
 	}
-	respBytes, err := io.ReadAll(resp.Body)
+	respBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxACMEResponseBytes+1))
 	if err != nil {
 		return resp, nil, err
 	}
+	if len(respBytes) > maxACMEResponseBytes {
+		return resp, nil, fmt.Errorf("ACME response from %s exceeds %d bytes", url, maxACMEResponseBytes)
+	}
 	if resp.StatusCode >= 400 {
-		return resp, respBytes, fmt.Errorf("ACME request %s failed HTTP %d: %s", url, resp.StatusCode, strings.TrimSpace(string(respBytes)))
+		detail := strings.TrimSpace(string(respBytes))
+		if len(detail) > 512 {
+			detail = detail[:512] + "…"
+		}
+		return resp, respBytes, fmt.Errorf("ACME request %s failed HTTP %d: %s", url, resp.StatusCode, detail)
 	}
 	return resp, respBytes, nil
 }
@@ -805,12 +832,16 @@ func loadOrCreateAccountKey(s *store.Store, name string) (*ecdsa.PrivateKey, str
 	full := s.Path(rel)
 	if raw, err := os.ReadFile(full); err == nil {
 		block, _ := pem.Decode(raw)
-		if block != nil {
-			key, err := x509.ParseECPrivateKey(block.Bytes)
-			if err == nil {
-				return key, full, nil
-			}
+		if block == nil {
+			return nil, "", fmt.Errorf("account key %s is not PEM; refusing to overwrite it", full)
 		}
+		key, err := x509.ParseECPrivateKey(block.Bytes)
+		if err != nil {
+			return nil, "", fmt.Errorf("parse account key %s (refusing to overwrite): %w", full, err)
+		}
+		return key, full, nil
+	} else if !os.IsNotExist(err) {
+		return nil, "", fmt.Errorf("read account key %s: %w", full, err)
 	}
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -858,14 +889,43 @@ func createCSR(priv *ecdsa.PrivateKey, domains []string) ([]byte, error) {
 	return x509.CreateCertificateRequest(rand.Reader, tmpl, priv)
 }
 
-func parseCertValidity(certPEM []byte) (time.Time, time.Time) {
+// maxACMEResponseBytes caps every ACME server response body (directory, JSON
+// objects, PEM chain). Real chains are a few KiB; 1 MiB leaves ample headroom.
+const maxACMEResponseBytes = 1 << 20
+
+var acmeTokenRE = regexp.MustCompile(`^[A-Za-z0-9_-]{1,256}$`)
+
+func validACMEToken(tok string) bool { return acmeTokenRE.MatchString(tok) }
+
+func containsFold(list []string, v string) bool {
+	for _, x := range list {
+		if strings.EqualFold(strings.TrimSuffix(x, "."), strings.TrimSuffix(v, ".")) {
+			return true
+		}
+	}
+	return false
+}
+
+// validateIssuedCert parses the leaf of a downloaded chain and checks that it binds the
+// key we generated and covers every requested domain. A garbage or substituted chain is
+// rejected instead of being stored with fabricated validity dates.
+func validateIssuedCert(certPEM []byte, leafKey *ecdsa.PrivateKey, domains []string) (time.Time, time.Time, error) {
 	block, _ := pem.Decode(certPEM)
-	if block == nil {
-		return time.Now().UTC(), time.Now().UTC().Add(90 * 24 * time.Hour)
+	if block == nil || block.Type != "CERTIFICATE" {
+		return time.Time{}, time.Time{}, fmt.Errorf("ACME server returned no PEM certificate")
 	}
 	cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
-		return time.Now().UTC(), time.Now().UTC().Add(90 * 24 * time.Hour)
+		return time.Time{}, time.Time{}, fmt.Errorf("parse issued certificate: %w", err)
 	}
-	return cert.NotBefore.UTC(), cert.NotAfter.UTC()
+	pub, ok := cert.PublicKey.(*ecdsa.PublicKey)
+	if !ok || !pub.Equal(&leafKey.PublicKey) {
+		return time.Time{}, time.Time{}, fmt.Errorf("issued certificate public key does not match the requested key")
+	}
+	for _, d := range domains {
+		if err := cert.VerifyHostname(strings.TrimSuffix(d, ".")); err != nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("issued certificate does not cover %q: %w", d, err)
+		}
+	}
+	return cert.NotBefore.UTC(), cert.NotAfter.UTC(), nil
 }

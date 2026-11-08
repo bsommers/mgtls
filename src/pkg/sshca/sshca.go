@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -45,7 +47,7 @@ type SignSSHRequest struct {
 	ExistingPubKey  string            `json:"existing_pub_key,omitempty" yaml:"existing_pub_key,omitempty"` // optional path to existing .pub
 	CriticalOptions map[string]string `json:"critical_options,omitempty" yaml:"critical_options,omitempty"`
 	Extensions      map[string]string `json:"extensions,omitempty" yaml:"extensions,omitempty"`
-	CASigner        ssh.Signer        `json:"-" yaml:"-"` // optional hardware/agent/KMS CA signer
+	CASigner        ssh.Signer        `json:"-" yaml:"-"`                                           // optional hardware/agent/KMS CA signer
 	AgentSocket     string            `json:"agent_socket,omitempty" yaml:"agent_socket,omitempty"` // optional SSH_AUTH_SOCK path for hardware/agent CA signing
 }
 
@@ -73,17 +75,25 @@ type SSHConfigRequest struct {
 	HostCertName string   `json:"host_cert_name,omitempty" yaml:"host_cert_name,omitempty"`
 	UserCertName string   `json:"user_cert_name,omitempty" yaml:"user_cert_name,omitempty"`
 	HostPatterns []string `json:"host_patterns,omitempty" yaml:"host_patterns,omitempty"` // e.g. ["*.internal", "10.0.0.*"]
-	Principals   []string `json:"principals,omitempty" yaml:"principals,omitempty"`
-	OutputDir    string   `json:"output_dir,omitempty" yaml:"output_dir,omitempty"`
+	// Principals is the shorthand form: each principal may log in only as the
+	// local account of the same name (auth_principals/<p> contains just <p>).
+	Principals []string `json:"principals,omitempty" yaml:"principals,omitempty"`
+	// AccountPrincipals maps a local account to the certificate principals that
+	// may log in as it, e.g. {"deploy": ["alice", "ci"]}. One file per account
+	// is written to auth_principals/<account> and sshd resolves it via %u.
+	AccountPrincipals map[string][]string `json:"account_principals,omitempty" yaml:"account_principals,omitempty"`
+	OutputDir         string              `json:"output_dir,omitempty" yaml:"output_dir,omitempty"`
 }
 
 type SSHConfigBundle struct {
-	OutputDir            string            `json:"output_dir"`
-	SSHDConfigPath       string            `json:"sshd_config_path"`
-	SSHClientConfigPath  string            `json:"ssh_client_config_path"`
-	KnownHostsPath       string            `json:"known_hosts_path"`
-	AuthorizedPrincipals string            `json:"authorized_principals_path"`
-	Files                map[string]string `json:"files"`
+	OutputDir           string `json:"output_dir"`
+	SSHDConfigPath      string `json:"sshd_config_path"`
+	SSHClientConfigPath string `json:"ssh_client_config_path"`
+	KnownHostsPath      string `json:"known_hosts_path"`
+	// AuthorizedPrincipals is the sshd AuthorizedPrincipalsFile value: <dir>/%u.
+	AuthorizedPrincipals    string            `json:"authorized_principals_path"`
+	AuthorizedPrincipalsDir string            `json:"authorized_principals_dir"`
+	Files                   map[string]string `json:"files"`
 }
 
 func generateSSHKeyPair(alg, comment string) (crypto.PrivateKey, ssh.PublicKey, []byte, []byte, string, error) {
@@ -148,6 +158,9 @@ func formatAuthorizedKeyWithComment(pub ssh.PublicKey, comment string) []byte {
 func CreateSSHCA(s *store.Store, req SSHCARequest) (*SSHCAResult, error) {
 	if strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("SSH CA name is required")
+	}
+	if err := store.ValidName("SSH CA", req.Name); err != nil {
+		return nil, err
 	}
 	caType := strings.ToLower(strings.TrimSpace(req.CAType))
 	if caType == "" {
@@ -218,6 +231,9 @@ func SignSSHCert(s *store.Store, req SignSSHRequest) (*SignSSHResult, error) {
 	if strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("SSH certificate name is required")
 	}
+	if err := store.ValidName("SSH certificate", req.Name); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(req.CAName) == "" {
 		return nil, fmt.Errorf("SSH CA name is required")
 	}
@@ -265,6 +281,21 @@ func SignSSHCert(s *store.Store, req SignSSHRequest) (*SignSSHResult, error) {
 	if certType == "" {
 		certType = caRec.CAType
 	}
+	if caRec.CAType != "" && certType != caRec.CAType {
+		return nil, fmt.Errorf("SSH CA %q is a %s CA and cannot sign %s certificates", req.CAName, caRec.CAType, certType)
+	}
+	if len(req.Principals) == 0 {
+		// An empty ValidPrincipals list means "any user" / "any host" to OpenSSH.
+		return nil, fmt.Errorf("at least one principal is required (an SSH certificate with no principals is valid for every %s)", certType)
+	}
+	for _, p := range req.Principals {
+		if err := validatePrincipal(p, certType == "host"); err != nil {
+			return nil, err
+		}
+	}
+	if req.CASigner != nil && caRec.Fingerprint != "" && ssh.FingerprintSHA256(req.CASigner.PublicKey()) != caRec.Fingerprint {
+		return nil, fmt.Errorf("supplied CA signer does not match SSH CA %q fingerprint %s", req.CAName, caRec.Fingerprint)
+	}
 	var sshCertType uint32
 	switch certType {
 	case "user":
@@ -278,6 +309,12 @@ func SignSSHCert(s *store.Store, req SignSSHRequest) (*SignSSHResult, error) {
 	keyID := strings.TrimSpace(req.KeyID)
 	if keyID == "" {
 		keyID = req.Name
+	}
+	if hasControlChars(keyID) {
+		return nil, fmt.Errorf("SSH key ID must not contain control characters")
+	}
+	if req.ValidHours > maxSSHValidHours {
+		return nil, fmt.Errorf("valid_hours %d exceeds maximum %d", req.ValidHours, maxSSHValidHours)
 	}
 
 	validHours := req.ValidHours
@@ -468,6 +505,9 @@ func GenerateSSHConfigBundle(s *store.Store, req SSHConfigRequest) (*SSHConfigBu
 	if name == "" {
 		name = "default"
 	}
+	if err := store.ValidName("SSH config bundle", name); err != nil {
+		return nil, err
+	}
 
 	outDir := strings.TrimSpace(req.OutputDir)
 	if outDir == "" {
@@ -525,20 +565,30 @@ func GenerateSSHConfigBundle(s *store.Store, req SSHConfigRequest) (*SSHConfigBu
 		userCertRec = rec
 	}
 
-	principals := req.Principals
-	if len(principals) == 0 && userCertRec != nil && len(userCertRec.Principals) > 0 {
-		principals = userCertRec.Principals
+	accounts, err := resolveAccountPrincipals(req, userCertRec)
+	if err != nil {
+		return nil, err
 	}
-	if len(principals) == 0 {
-		principals = []string{"root", "admin"}
+	for _, hp := range req.HostPatterns {
+		if !hostPatternRE.MatchString(hp) {
+			return nil, fmt.Errorf("invalid host pattern %q: allowed characters are letters, digits and . * ? ! : - _ [ ]", hp)
+		}
+	}
+	if hasControlChars(outDir) || strings.ContainsAny(outDir, " \t\"") {
+		return nil, fmt.Errorf("output dir %q must not contain whitespace, quotes or control characters (it is written unquoted into sshd/ssh config)", outDir)
 	}
 
-	authPrincipalsPath := filepath.Join(outDir, "authorized_principals")
-	authPrincipalsContent := strings.Join(principals, "\n") + "\n"
-	if err := os.WriteFile(authPrincipalsPath, []byte(authPrincipalsContent), 0644); err != nil {
-		return nil, fmt.Errorf("write authorized_principals: %w", err)
+	authPrincipalsDir := filepath.Join(outDir, "auth_principals")
+	if err := writeAccountPrincipals(authPrincipalsDir, accounts, files); err != nil {
+		return nil, err
 	}
-	files["authorized_principals"] = authPrincipalsPath
+	// sshd expands %u to the target account, so a certificate is only accepted
+	// for accounts whose own file lists one of its principals.
+	authPrincipalsPath := filepath.Join(authPrincipalsDir, "%u")
+	// Remove the pre-per-account single file so it cannot be mistaken for live config.
+	if err := os.Remove(filepath.Join(outDir, "authorized_principals")); err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("remove legacy authorized_principals: %w", err)
+	}
 
 	var sshdBuf strings.Builder
 	sshdBuf.WriteString("# Generated by mgtls\n")
@@ -606,11 +656,131 @@ func GenerateSSHConfigBundle(s *store.Store, req SSHConfigRequest) (*SSHConfigBu
 	files["ssh_client_config"] = sshClientConfigPath
 
 	return &SSHConfigBundle{
-		OutputDir:            outDir,
-		SSHDConfigPath:       sshdConfigPath,
-		SSHClientConfigPath:  sshClientConfigPath,
-		KnownHostsPath:       knownHostsPath,
-		AuthorizedPrincipals: authPrincipalsPath,
-		Files:                files,
+		OutputDir:               outDir,
+		SSHDConfigPath:          sshdConfigPath,
+		SSHClientConfigPath:     sshClientConfigPath,
+		KnownHostsPath:          knownHostsPath,
+		AuthorizedPrincipals:    authPrincipalsPath,
+		AuthorizedPrincipalsDir: authPrincipalsDir,
+		Files:                   files,
 	}, nil
+}
+
+// accountNameRE is a conservative POSIX login name (useradd's default
+// NAME_REGEX). It cannot contain "/" or start with ".", so it is safe as a
+// file name inside auth_principals/.
+var accountNameRE = regexp.MustCompile(`^[a-z_][a-z0-9_.-]{0,31}$`)
+
+// resolveAccountPrincipals builds the account -> principals map for the
+// per-account AuthorizedPrincipalsFile layout.
+func resolveAccountPrincipals(req SSHConfigRequest, userCertRec *store.SSHCertRecord) (map[string][]string, error) {
+	trustsUserCA := strings.TrimSpace(req.UserCAName) != ""
+	if len(req.AccountPrincipals) > 0 {
+		if len(req.Principals) > 0 {
+			return nil, fmt.Errorf("set either principals or account_principals, not both")
+		}
+		out := make(map[string][]string, len(req.AccountPrincipals))
+		for acct, ps := range req.AccountPrincipals {
+			if !accountNameRE.MatchString(acct) {
+				return nil, fmt.Errorf("invalid account name %q: must match %s", acct, accountNameRE)
+			}
+			if len(ps) == 0 {
+				return nil, fmt.Errorf("account %q has no principals", acct)
+			}
+			for _, p := range ps {
+				if err := validatePrincipal(p, false); err != nil {
+					return nil, err
+				}
+			}
+			out[acct] = ps
+		}
+		return out, nil
+	}
+
+	principals := req.Principals
+	if len(principals) == 0 && userCertRec != nil && len(userCertRec.Principals) > 0 {
+		principals = userCertRec.Principals
+	}
+	if len(principals) == 0 && trustsUserCA {
+		// Previously defaulted to root+admin, silently authorizing privileged logins.
+		return nil, fmt.Errorf("principals or account_principals are required when trusting a user CA")
+	}
+	out := make(map[string][]string, len(principals))
+	for _, p := range principals {
+		if err := validatePrincipal(p, false); err != nil {
+			return nil, err
+		}
+		if !accountNameRE.MatchString(p) {
+			return nil, fmt.Errorf("principal %q is not a valid local account name; map it explicitly with account_principals (e.g. --account deploy=%s)", p, p)
+		}
+		out[p] = []string{p}
+	}
+	return out, nil
+}
+
+// writeAccountPrincipals writes one principals file per account into dir and
+// removes files for accounts no longer configured, so a dropped mapping stops
+// granting access on the next run.
+func writeAccountPrincipals(dir string, accounts map[string][]string, files map[string]string) error {
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", dir, err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", dir, err)
+	}
+	for _, e := range entries {
+		if _, keep := accounts[e.Name()]; keep || !e.Type().IsRegular() {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
+			return fmt.Errorf("remove stale principals file %s: %w", e.Name(), err)
+		}
+	}
+	names := make([]string, 0, len(accounts))
+	for acct := range accounts {
+		names = append(names, acct)
+	}
+	sort.Strings(names)
+	for _, acct := range names {
+		path := filepath.Join(dir, acct)
+		if err := store.WriteFileAtomic(path, []byte(strings.Join(accounts[acct], "\n")+"\n"), 0644); err != nil {
+			return fmt.Errorf("write auth_principals/%s: %w", acct, err)
+		}
+		files["auth_principals/"+acct] = path
+	}
+	return nil
+}
+
+// maxSSHValidHours caps certificate lifetime (10 years) and keeps
+// time.Duration(validHours)*time.Hour far from int64 overflow.
+const maxSSHValidHours = 24 * 365 * 10
+
+var (
+	principalRE     = regexp.MustCompile(`^[A-Za-z0-9._@+-]{1,255}$`)
+	hostPrincipalRE = regexp.MustCompile(`^[A-Za-z0-9._@+*?-]{1,255}$`)
+	hostPatternRE   = regexp.MustCompile(`^[A-Za-z0-9.*?!:_\[\]-]{1,255}$`)
+)
+
+// validatePrincipal rejects principals that are empty, contain whitespace, commas,
+// newlines (which would inject extra lines into authorized_principals). Wildcards
+// (* ?) are allowed only for host certificates, where OpenSSH clients match them.
+func validatePrincipal(p string, host bool) error {
+	re := principalRE
+	if host {
+		re = hostPrincipalRE
+	}
+	if !re.MatchString(p) {
+		return fmt.Errorf("invalid SSH principal %q: use letters, digits and . _ @ + -", p)
+	}
+	return nil
+}
+
+func hasControlChars(v string) bool {
+	for _, r := range v {
+		if r < 0x20 || r == 0x7f {
+			return true
+		}
+	}
+	return false
 }

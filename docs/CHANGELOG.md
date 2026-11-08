@@ -5,6 +5,29 @@ All notable changes to `mgtls` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+- **MCP HTTP transport now requires authentication** (mTLS `--client-ca` or bearer token `MGTLS_MCP_TOKEN`/`--token-file`); refuses plaintext on non-loopback; rejects `Origin`-bearing and non-JSON requests; 413 on oversized bodies; read/write/idle timeouts. `acme_obtain` `dns_exec_hook`/`skip_verify_tls` gated behind `--allow-exec-hooks`. **Breaking** for unauthenticated HTTP users.
+- **Single artifact-name allowlist** (`store.ValidName`) enforced for CA, cert, SSH, ACME, target, bundle and systemd unit names: `../ca/root` could previously overwrite CA keys from an ACME/MCP request.
+- **Store writes are atomic and symlink-safe** (`O_EXCL` temp + fsync + rename), and manifest read-modify-write is serialized across processes with `flock` (watch daemon + CLI + MCP no longer lose updates).
+- **ACME**: server-supplied challenge tokens and identifiers are validated before use as file names/env; response bodies capped at 1 MiB; issued certificate must match the generated key and requested names; solver servers have timeouts; corrupt account keys are no longer silently replaced.
+- **OpenSSH CA**: refuses certificates with no principals (OpenSSH treats them as valid for every user/host), validates principals and host patterns (newline injection into `authorized_principals` / `ssh_config`), enforces CA type (host CA cannot sign user certs), checks supplied `CASigner` fingerprint, caps validity. Config bundles no longer default to authorizing `root` and `admin`. **Breaking**.
+- **Generators**: trust scripts use real POSIX/PowerShell single-quoting (Go `%q` allowed `$(…)` expansion); target generator validates host/port/paths/`upstream_url` against directive and shell injection; systemd units validate names/calendar/durations, quote `ExecStart` per systemd rules (`%%`, `$$`) and add `NoNewPrivileges=true`.
+- **Toolchain** pinned to `go1.26.10` (`toolchain` directive): clears 28 reachable standard-library CVEs reported by `govulncheck` against go1.26.0.
+- **Container** now actually runs as UID/GID `65532` with a non-root-owned `/data`.
+- **Installer**: fails when no SHA-256 tool is available instead of installing unverified; validates `--version`; never builds from the current directory under `curl | bash`; uninstall only removes a share dir it created.
+
+- **OpenSSH config bundles write one principals file per account.** The old bundle wrote a single `authorized_principals` file, so a certificate with any listed principal could log in as every local account. The bundle now writes `auth_principals/<account>` files and the sshd drop-in sets `AuthorizedPrincipalsFile <out>/auth_principals/%u`. Map accounts explicitly with `ssh config --account deploy=alice,ci`, or with `account_principals` in MCP and manifests. `--principals a,b` now means that each principal may log in only as the account of the same name. `--principals` no longer defaults to `root,admin`. Rerunning the command removes the files of dropped accounts, and the old single `authorized_principals` file is deleted. **Breaking**: redeploy the bundle and remove `/etc/ssh/authorized_principals`.
+- **`mgtls watch` keeps revoked certificates revoked.** Before, each renewal cycle reissued every revoked X.509 certificate, which silently undid `mgtls revoke`. Revoked certificates are now skipped in both manifest and store-only mode and listed in the new `skipped_revoked` report field. To rotate on purpose, pass `watch --reissue-revoked`: it reissues the certificate with a new key and serial. For timers, `systemd generate --reissue-revoked` adds the same flag to the unit. **Behavior change** if you relied on revoke-then-watch to rotate. The Go API `profile.RunRenewalCycle` takes a new `reissueRevoked bool` parameter.
+
+### Fixed
+- `mgtls watch` no longer exits on the first failing certificate; failures are reported per cycle (`errors` in the JSON report) and retried, and target regeneration / `--on-renew` still run for certificates that did renew. The hook has a 5-minute timeout. SIGINT/SIGTERM now cancel cleanly.
+- Target generation no longer swallows read/write errors when copying key material (a missing local path still falls back to a verbatim reference).
+
+### Corrections to 1.2.0 notes
+- The 1.2.0 entry below claimed a non-root container user, `systemd generate --mode/--output/--binary/--user`, `watch --json`, and a `tests/run_all.sh` suite. Only the non-root user is now true; the actual systemd flags are `--unit-name`, `--binary-path`, `--manifest`, `--calendar`, `--renew-before`, `--on-renew`, `--out`.
+
 ## [1.2.0] - 2026-11-06
 
 ### Added

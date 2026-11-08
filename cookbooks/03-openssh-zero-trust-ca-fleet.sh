@@ -52,7 +52,8 @@ echo "==> [4/4] Inspecting Certificates & Generating sshd_config / @cert-authori
   --user-cert oncall-sre-user \
   --host-cert bastion-host \
   --hosts "*.corp.internal,10.10.*.*" \
-  --principals "sre,admin,deploy" \
+  --account sre=sre \
+  --account deploy=sre,deploy \
   --out "${OUT_DIR}"
 
 ls -la "${OUT_DIR}"
