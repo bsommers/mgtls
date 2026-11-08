@@ -131,7 +131,7 @@ func (srv *Server) HandleJSONRPC(ctx context.Context, raw []byte) ([]byte, error
 			},
 			"serverInfo": map[string]any{
 				"name":    "mgtls",
-				"version": "1.1.1",
+				"version": "1.2.0",
 			},
 		}
 		return marshalResult(id, res)
@@ -487,6 +487,24 @@ func (srv *Server) listTools() []mcpTool {
 				},
 			},
 		},
+		{
+			Name:        "pki_probe",
+			Description: "Probe a live TLS or Mutual TLS endpoint (host:port) to inspect negotiated TLS version, cipher suite, ALPN, peer certificate chain, SANs, expiration, and CA trust verification",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"address":          map[string]any{"type": "string", "description": "Target host:port to probe (e.g. localhost:8443)"},
+					"server_name":      map[string]any{"type": "string", "description": "Optional SNI hostname override"},
+					"ca_name":          map[string]any{"type": "string", "description": "Optional .mgtls CA name to verify peer chain against"},
+					"ca_cert_path":     map[string]any{"type": "string", "description": "Optional CA certificate PEM path"},
+					"client_cert_name": map[string]any{"type": "string", "description": "Optional .mgtls leaf certificate name for mTLS"},
+					"client_cert_path": map[string]any{"type": "string", "description": "Optional client certificate PEM path"},
+					"client_key_path":  map[string]any{"type": "string", "description": "Optional client private key PEM path"},
+					"alpn":             map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				},
+				"required": []string{"address"},
+			},
+		},
 	}
 }
 
@@ -759,6 +777,13 @@ func (srv *Server) dispatchTool(ctx context.Context, name string, rawArgs json.R
 			return nil, err
 		}
 		return profile.RunDoctor(srv.Store, args.WarnDays)
+
+	case "pki_probe":
+		var req pki.ProbeRequest
+		if err := decodeArgs(rawArgs, &req); err != nil {
+			return nil, err
+		}
+		return pki.ProbeEndpoint(srv.Store, req)
 
 	default:
 		return nil, fmt.Errorf("unknown tool %q", name)

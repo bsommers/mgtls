@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -231,6 +233,55 @@ func TestCLIFlagsHelpVersionAndNegativePaths(t *testing.T) {
 		if err != nil || !strings.Contains(sysOut, "mgtls-test.service") {
 			t.Fatalf("systemd generate failed: err=%v, out=%s", err, sysOut)
 		}
+
+		// Test probe CLI subcommand against a local TLS 1.3 listener
+		issueOut, err := runArgs("--store-dir", storeDir, "cert", "issue", "--name", "probe-srv", "--ca", "root-ca", "--cn", "api.internal", "--dns", "api.internal,localhost", "--ip", "127.0.0.1", "--role", "server")
+		if err != nil {
+			t.Fatalf("cert issue probe-srv failed: %v", err)
+		}
+		var issued struct {
+			Record struct {
+				FullChainPath string `json:"full_chain_path"`
+				KeyPath       string `json:"key_path"`
+			} `json:"record"`
+		}
+		if err := json.Unmarshal([]byte(issueOut), &issued); err != nil {
+			t.Fatalf("unmarshal issued cert: %v", err)
+		}
+		srvPair, err := tls.LoadX509KeyPair(issued.Record.FullChainPath, issued.Record.KeyPath)
+		if err != nil {
+			t.Fatalf("LoadX509KeyPair for probe test: %v", err)
+		}
+		ln, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{
+			Certificates: []tls.Certificate{srvPair},
+			MinVersion:   tls.VersionTLS13,
+		})
+		if err != nil {
+			t.Fatalf("tls.Listen for probe test: %v", err)
+		}
+		defer ln.Close()
+		go func() {
+			for {
+				c, err := ln.Accept()
+				if err != nil {
+					return
+				}
+				go func(conn net.Conn) {
+					defer conn.Close()
+					if tc, ok := conn.(*tls.Conn); ok {
+						_ = tc.Handshake()
+					}
+				}(c)
+			}
+		}()
+
+		probeOut, err := runArgs("--store-dir", storeDir, "probe", "--addr", ln.Addr().String(), "--sni", "api.internal", "--ca", "root-ca", "--strict")
+		if err != nil || !strings.Contains(probeOut, `"verified": true`) {
+			t.Fatalf("probe --strict failed: err=%v, out=%s", err, probeOut)
+		}
+		if _, err := runArgs("--store-dir", storeDir, "probe", "--sni", "wrong.internal", "--ca", "root-ca", "--strict", ln.Addr().String()); err == nil {
+			t.Fatalf("expected probe --strict to fail on hostname mismatch")
+		}
 	}
 
 	// Negative CLI error paths
@@ -248,6 +299,7 @@ func TestCLIFlagsHelpVersionAndNegativePaths(t *testing.T) {
 		{"target"},
 		{"target", "unknown-sub"},
 		{"target", "generate"},
+		{"probe"},
 		{"mcp", "serve", "--transport", "unsupported-proto"},
 	}
 	for _, tc := range errCases {

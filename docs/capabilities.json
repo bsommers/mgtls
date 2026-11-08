@@ -5,8 +5,8 @@
   "repository": "https://github.com/bsommers/mgtls",
   "homepage": "https://bsommers.github.io/mgtls/",
   "summary": {
-    "total_capabilities": 12,
-    "operational": 11,
+    "total_capabilities": 13,
+    "operational": 12,
     "beta": 0,
     "planned": 1
   },
@@ -98,6 +98,14 @@
       "since": "1.2.0",
       "package": "src/pkg/pki",
       "verification": "go test -race ./src/pkg/pki ./src/pkg/sshca"
+    },
+    {
+      "id": "CAP-PROBE-001",
+      "name": "Live TLS & Mutual TLS Endpoint Prober, Chain Verifier & Cipher Auditor (mgtls probe & MCP pki_probe)",
+      "status": "operational",
+      "since": "1.3.0",
+      "package": "src/pkg/pki",
+      "verification": "go test -race ./src/pkg/pki"
     },
     {
       "id": "CAP-OCSP-001",

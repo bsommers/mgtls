@@ -81,6 +81,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return runWatch(ctx, storeDir, rest, stdout)
 	case "systemd":
 		return runSystemd(storeDir, rest, stdout)
+	case "probe":
+		return runProbe(storeDir, rest, stdout)
 	case "mcp":
 		return runMCP(ctx, storeDir, rest, stdin, stdout)
 	default:
@@ -124,6 +126,7 @@ Commands:
   doctor                     Audit store health, key permissions, and certificate expirations
   watch                      Autonomous renewal loop (monitors expirations, re-issues certs, runs --on-renew hooks)
   systemd generate           Generate systemd .service & .timer units for unattended renewal
+  probe                      Probe a live TLS/mTLS endpoint (protocol, cipher suite, peer chain, SANs & CA trust)
   mcp serve                  Run the Model Context Protocol (MCP) JSON-RPC 2.0 server (stdio or HTTP/mTLS)
   guide                      View the full end-to-end onboarding & workflow guide
   version                    Print version
@@ -1069,4 +1072,56 @@ func runSystemd(defaultStoreDir string, args []string, stdout io.Writer) error {
 		return err
 	}
 	return writeJSON(stdout, bundle)
+}
+
+func runProbe(defaultStoreDir string, args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("probe", flag.ContinueOnError)
+	storeDir := fs.String("store-dir", defaultStoreDir, "Store directory")
+	addr := fs.String("addr", "", "Target host:port to probe (e.g. localhost:8443)")
+	sni := fs.String("sni", "", "Optional SNI hostname override")
+	caName := fs.String("ca", "", "Optional .mgtls CA name to verify peer chain against")
+	caCert := fs.String("ca-cert", "", "Optional CA certificate PEM path")
+	clientCertName := fs.String("client-cert-name", "", "Optional .mgtls leaf certificate name for mTLS")
+	clientCert := fs.String("client-cert", "", "Optional client certificate PEM path for mTLS")
+	clientKey := fs.String("client-key", "", "Optional client private key PEM path for mTLS")
+	alpn := fs.String("alpn", "", "Optional comma-separated ALPN protocols (e.g. h2,http/1.1)")
+	timeout := fs.Duration("timeout", 5*time.Second, "Connection & handshake timeout")
+	strict := fs.Bool("strict", false, "Return non-zero exit error if peer chain is unverified or has warnings")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	targetAddr := *addr
+	if targetAddr == "" && fs.NArg() > 0 {
+		targetAddr = fs.Arg(0)
+	}
+	s, err := store.New(*storeDir)
+	if err != nil {
+		return err
+	}
+	rep, err := pki.ProbeEndpoint(s, pki.ProbeRequest{
+		Address:        targetAddr,
+		ServerName:     *sni,
+		CAName:         *caName,
+		CACertPath:     *caCert,
+		ClientCertName: *clientCertName,
+		ClientCertPath: *clientCert,
+		ClientKeyPath:  *clientKey,
+		ALPN:           splitCSV(*alpn),
+		Timeout:        *timeout,
+	})
+	if err != nil {
+		return err
+	}
+	if err := writeJSON(stdout, rep); err != nil {
+		return err
+	}
+	if *strict {
+		if !rep.Verified {
+			return fmt.Errorf("probe strict check failed: %s", rep.VerificationError)
+		}
+		if len(rep.Warnings) > 0 {
+			return fmt.Errorf("probe strict check failed with %d warning(s): %s", len(rep.Warnings), strings.Join(rep.Warnings, "; "))
+		}
+	}
+	return nil
 }

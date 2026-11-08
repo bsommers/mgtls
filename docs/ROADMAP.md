@@ -1,53 +1,26 @@
-# `mgtls` Forward Roadmap & Next Options (`v1.2.0+`)
+# `mgtls` Forward Roadmap
 
-> **Status**: All 4 Roadmap Options (Option 1: Distribution & Onboarding, Option 2: 14 Target Framework Generators, Option 3: Autonomous Renewal Daemon & `systemd` Generator, and Option 4: Hardware-Backed Root CA / KMS / `ssh-agent` Signer Seams) are **100% COMPLETED**.
-
----
-
-## Completed Milestone
-
-### [x] Option 1: Distribution & Zero-Friction Onboarding (`COMPLETED`)
-- **Multi-Target Installer ([`install.sh`](../install.sh), [`scripts/install.sh`](../scripts/install.sh), [`docs/install.sh`](install.sh))**:
-  - Supports `--local` (`${XDG_BIN_HOME:-$HOME/.local/bin}`), `--global` (`/usr/local/bin`), `--prefix DIR`, `--copy`, `--from-release` (downloads prebuilt binary + `SHA256SUMS` from GitHub Releases and verifies SHA-256), `--dry-run`, `--uninstall`, `--force`, and `-h/--help`.
-  - Protects unmanaged binaries unless `--force` is passed and prints `export PATH="..."` + `Next steps:` breadcrumbs.
-- **Minimal Scratch Container ([`Dockerfile`](../Dockerfile))**:
-  - Multi-stage `CGO_ENABLED=0` Alpine builder $\rightarrow$ `FROM scratch` runtime image with CA roots and `/usr/local/bin/mgtls`.
-- **In-Tool Onboarding & Workflow Breadcrumbs ([`src/cmd/mgtls/main.go`](../src/cmd/mgtls/main.go))**:
-  - `mgtls init --with-root-ca --starter --yes` idempotently initializes `.mgtls/`, creates the Root CA, and writes a starter `mgtls.yaml` manifest.
-  - `mgtls guide` prints the 5-stage offline onboarding lifecycle guide (`init` $\rightarrow$ `doctor` $\rightarrow$ `apply`/`target` $\rightarrow$ `ssh`/`acme` $\rightarrow$ `mcp`).
-  - `mgtls init`, `mgtls apply`, and `mgtls doctor` emit progressive `Next steps:` breadcrumbs to `stderr` (suppressed via `--quiet`) so `stdout` remains pure JSON for piping.
+**Completed Releases:** `v1.0.0`, `v1.1.0`, `v1.1.1`, `v1.2.0` (`0607655`)  
+**Next Target Milestone:** `v1.3.0`
 
 ---
 
-## Remaining Options for Upcoming Milestones (Prompt Later)
+## Completed `v1.2.0` Roadmap Options
 
-### [x] Option 2: New Target Framework Generators (`v1.2.0` — `COMPLETED`)
-Expanded `mgtls target generate` in `src/pkg/targets/targets.go` and `src/pkg/targets/templates.go` from 7 to **14 targets** (`fastapi`, `springboot`, `mcp`, `nginx`, `vite`, `proxmox`, `openssh`, `caddy`, `traefik`, `envoy`, `postgres`, `redis`, `grpc-go`, `nodejs-express`):
-1. **Cloud-Native Ingress & Service Mesh**:
-   - **`caddy`**: Automatic mTLS (`client_auth { mode require_and_verify }`) Caddyfile bundle.
-   - **`traefik`**: Dynamic TLS `ClientAuthType: RequireAndVerifyClientCert` YAML bundle.
-   - **`envoy`**: Static/xDS `DownstreamTlsContext` + SPIFFE SAN validation configuration.
-2. **Data Stores**:
-   - **`postgres`**: `postgresql.conf` SSL settings + `pg_hba.conf` (`hostssl ... clientcert=verify-full`) + client `psql` connection script.
-   - **`redis`**: `redis.conf` (`tls-port`, `tls-auth-clients yes`) + `redis-cli --tls` verification script.
-3. **Polyglot RPC & Backend**:
-   - **`grpc-go`**: Go `credentials.NewTLS` mutual TLS server & client starter stubs.
-   - **`nodejs-express`**: Node.js `node:https` (`requestCert: true, rejectUnauthorized: true`) mTLS server & client bundle.
+| # | Option | Status | Summary |
+| :--- | :--- | :--- | :--- |
+| **1** | **Distribution, Container & Homebrew/Install Script (`CAP-DIST-001`)** | `[x] COMPLETED (c0714e4)` | Multi-target `install.sh` (`--local`, `--global`, `--prefix`, `--from-release`, `--dry-run`, `--uninstall`), multi-stage `Dockerfile` (`FROM scratch`), `mgtls guide`, `mgtls init --starter --yes`, and contextual `Next steps:` breadcrumbs on `stderr`. |
+| **2** | **Expanded Target Framework Generators (`CAP-TARGETS-001`)** | `[x] COMPLETED (3d4bcb4)` | Expanded `mgtls target generate` from 7 to **14 targets**: added **Caddy**, **Traefik**, **Envoy Proxy (xDS SDS)**, **PostgreSQL (`pg_hba.conf`)**, **Redis (`tls-auth-clients yes`)**, **gRPC-Go**, and **Node.js / Express**. |
+| **3** | **Automated Certificate Renewal Daemon & `systemd` Timer (`CAP-WATCH-001`)** | `[x] COMPLETED (ab615da)` | Added `mgtls watch` (`--manifest`, `--renew-before`, `--interval`, `--on-renew`, `--once`) and `mgtls systemd generate` (`--mode timer|daemon`, `--output`, `--user`, `--on-renew`). |
+| **4** | **Hardware-Backed Root CA, KMS & `ssh-agent` Signer Seams (`CAP-HSM-001`)** | `[x] COMPLETED (750023c)` | Extended `pki.CARequest`/`CertRequest` with `crypto.Signer` (`Signer`, `ParentSigner`, `CASigner`) and `sshca.SSHCARequest`/`SignSSHRequest` with `ssh.Signer` + live `ssh-agent` socket (`--agent-socket` / `SSH_AUTH_SOCK`). |
 
 ---
 
-### [x] Option 3: Autonomous Renewal Daemon & Webhook Hooks (`mgtls watch` / `systemd` — `COMPLETED`)
-Added continuous lifecycle automation in `src/pkg/profile/profile.go` (`RunRenewalCycle`, `Watch`, `GenerateSystemdUnits`) and `src/cmd/mgtls/main.go` (`mgtls watch`, `mgtls systemd generate`):
-1. **`mgtls watch` Daemon Subcommand**:
-   - `mgtls watch --manifest mgtls.yaml --interval 12h --renew-before 720h --on-renew "systemctl reload nginx"` (plus `--once` for cron/systemd oneshot execution).
-   - Periodically runs expiration checks, automatically re-issues expiring X.509 leaf certificates, self-signed certificates, OpenSSH certificates, and ACME certificates, re-renders affected target bundles, and executes `--on-renew` reload hooks with `MGTLS_STORE_DIR`, `MGTLS_RENEWED_COUNT`, and `MGTLS_RENEWED_CERTS`.
-2. **`systemd` Service & Timer Generator (`mgtls systemd generate`)**:
-   - Generates `mgtls-renew.service` (`PrivateTmp=true`, `ProtectSystem=full`) and `mgtls-renew.timer` (`Persistent=true`, `RandomizedDelaySec=5m`) units for unattended host deployment.
+## Proposed `v1.3.0` Roadmap Options
 
----
-
-### [x] Option 4: Hardware-Backed Root CA & YubiKey / KMS Support (`CAP-HSM-001` — `COMPLETED`)
-Implemented the planned capability from [`docs/CAPABILITIES.md`](CAPABILITIES.md):
-1. **Pluggable `crypto.Signer` & `ssh.Signer` Seams (`src/pkg/pki`, `src/pkg/sshca`)**:
-   - `pki.CARequest.Signer`, `pki.CARequest.ParentSigner`, and `pki.CertRequest.CASigner` accept any `crypto.Signer` (PKCS#11, YubiKey PIV, KMS, or custom hardware token) without writing CA private keys to disk.
-   - `sshca.SSHCARequest.Signer`, `sshca.SignSSHRequest.CASigner`, and `sshca.SignSSHRequest.AgentSocket` (`--agent-socket` / `SSH_AUTH_SOCK`) sign OpenSSH User and Host certificates directly via hardware-backed `ssh-agent` keys.
+| # | Option | Scope & Value |
+| :--- | :--- | :--- |
+| **Option A** | **RFC 6960 OCSP Responder & Stapling Verifier (`CAP-OCSP-001`)** | Add `mgtls ocsp serve` (lightweight zero-CGO HTTP OCSP responder backed by `.mgtls/index.json` revocation state) and `mgtls ocsp verify` (live OCSP response & TLS OCSP-stapling inspector), plus MCP tool `mgtls_ocsp_verify`. |
+| **Option B** | **`[x] COMPLETED` — Live TLS / mTLS Endpoint Prober & Cipher Auditor (`CAP-PROBE-001`)** | Added `mgtls probe --addr host:port` (`src/pkg/pki/probe.go`) and MCP tool `pki_probe` to connect to live TLS/mTLS endpoints, inspect negotiated TLS version/cipher suite/ALPN, verify peer chain against `.mgtls` CAs, check SANs/expiry, and emit JSON diagnostics. |
+| **Option C** | **CSR (`PKCS#10`) Workflow & External CA Signing (`CAP-CSR-001`)** | Add `mgtls csr create` and `mgtls csr sign` so external workloads can generate private keys locally, submit only a PKCS#10 `.csr.pem` to `mgtls` (via CLI or MCP `mgtls_csr_sign`), and receive a signed X.509 certificate without `mgtls` ever holding the leaf private key. |
+| **Option D** | **Encrypted-at-Rest Private Key Store (`CAP-VAULT-001`)** | Optional passphrase / environment-key (`MGTLS_PASSPHRASE` / `MGTLS_KEYFILE`) AES-256-GCM envelope encryption for `.mgtls/*/keys/*.key.pem` so private keys on disk are encrypted at rest while remaining zero-CGO. |

@@ -578,6 +578,7 @@ certs:
 		{"profile_apply", map[string]any{}},
 		{"pki_inspect", map[string]any{}},
 		{"pki_inspect", map[string]any{"cert_name": "does-not-exist"}},
+		{"pki_probe", map[string]any{}},
 	} {
 		res := callRPC(t, srv, "tools/call", map[string]any{
 			"name":      tc.name,
