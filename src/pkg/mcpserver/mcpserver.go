@@ -505,6 +505,21 @@ func (srv *Server) listTools() []mcpTool {
 				"required": []string{"address"},
 			},
 		},
+		{
+			Name:        "pki_ocsp_verify",
+			Description: "Verify RFC 6960 OCSP revocation status for a certificate via local .mgtls CA signing, a live HTTP OCSP responder URL, or a live TLS endpoint's stapled OCSP response",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"cert_name":       map[string]any{"type": "string", "description": "Certificate name in .mgtls store"},
+					"cert_path":       map[string]any{"type": "string", "description": "Certificate PEM path"},
+					"ca_name":         map[string]any{"type": "string", "description": "Issuing CA name in .mgtls store"},
+					"ca_cert_path":    map[string]any{"type": "string", "description": "Issuing CA certificate PEM path"},
+					"responder_url":   map[string]any{"type": "string", "description": "Optional HTTP OCSP responder URL"},
+					"stapled_address": map[string]any{"type": "string", "description": "Optional live TLS host:port to inspect OCSP stapling"},
+				},
+			},
+		},
 	}
 }
 
@@ -784,6 +799,13 @@ func (srv *Server) dispatchTool(ctx context.Context, name string, rawArgs json.R
 			return nil, err
 		}
 		return pki.ProbeEndpoint(srv.Store, req)
+
+	case "pki_ocsp_verify":
+		var req pki.VerifyOCSPRequest
+		if err := decodeArgs(rawArgs, &req); err != nil {
+			return nil, err
+		}
+		return pki.VerifyOCSP(srv.Store, req)
 
 	default:
 		return nil, fmt.Errorf("unknown tool %q", name)

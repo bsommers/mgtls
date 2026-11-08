@@ -282,6 +282,12 @@ func TestCLIFlagsHelpVersionAndNegativePaths(t *testing.T) {
 		if _, err := runArgs("--store-dir", storeDir, "probe", "--sni", "wrong.internal", "--ca", "root-ca", "--strict", ln.Addr().String()); err == nil {
 			t.Fatalf("expected probe --strict to fail on hostname mismatch")
 		}
+
+		// Test ocsp verify CLI subcommand
+		ocspOut, err := runArgs("--store-dir", storeDir, "ocsp", "verify", "--name", "probe-srv", "--ca", "root-ca")
+		if err != nil || !strings.Contains(ocspOut, `"status": "good"`) {
+			t.Fatalf("ocsp verify failed: err=%v, out=%s", err, ocspOut)
+		}
 	}
 
 	// Negative CLI error paths
@@ -300,6 +306,8 @@ func TestCLIFlagsHelpVersionAndNegativePaths(t *testing.T) {
 		{"target", "unknown-sub"},
 		{"target", "generate"},
 		{"probe"},
+		{"ocsp"},
+		{"ocsp", "unknown-sub"},
 		{"mcp", "serve", "--transport", "unsupported-proto"},
 	}
 	for _, tc := range errCases {

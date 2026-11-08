@@ -5,8 +5,8 @@
   "repository": "https://github.com/bsommers/mgtls",
   "homepage": "https://bsommers.github.io/mgtls/",
   "summary": {
-    "total_capabilities": 13,
-    "operational": 12,
+    "total_capabilities": 14,
+    "operational": 13,
     "beta": 0,
     "planned": 1
   },
@@ -109,7 +109,15 @@
     },
     {
       "id": "CAP-OCSP-001",
-      "name": "RFC 6960 OCSP Responder & Stapling Verification Engine",
+      "name": "RFC 6960 OCSP Responder & Stapling Verification Engine (mgtls ocsp serve/verify & MCP pki_ocsp_verify)",
+      "status": "operational",
+      "since": "1.3.0",
+      "package": "src/pkg/pki",
+      "verification": "go test -race ./src/pkg/pki"
+    },
+    {
+      "id": "CAP-CSR-001",
+      "name": "PKCS#10 Certificate Signing Request (CSR) Generation & External Signing Engine",
       "status": "planned",
       "target_version": "1.3.0",
       "package": "src/pkg/pki"

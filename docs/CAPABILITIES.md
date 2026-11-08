@@ -2,8 +2,8 @@
 
 Machine-readable manifest: [`docs/capabilities.json`](capabilities.json)
 
-- **Total Capabilities**: `13`
-- **Operational**: `12`
+- **Total Capabilities**: `14`
+- **Operational**: `13`
 - **Beta**: `0`
 - **Planned**: `1`
 
@@ -22,10 +22,11 @@ Machine-readable manifest: [`docs/capabilities.json`](capabilities.json)
 | `CAP-DIST-001` | **Multi-Target Installer, Scratch Container & Onboarding** (`install.sh`, `Dockerfile`, `mgtls guide`, `mgtls init --starter --yes`) | `install.sh`, `Dockerfile` | `operational` | `go test -race ./src/cmd/mgtls` |
 | `CAP-WATCH-001` | **Autonomous Renewal Daemon & `systemd` Generator** (`mgtls watch`, `--on-renew`, `mgtls systemd generate`) | `src/pkg/profile` | `operational` | `go test -race ./src/pkg/profile` |
 | `CAP-HSM-001` | **Hardware-Backed Root CA, KMS & `ssh-agent` Signer Seams** (`crypto.Signer` & `ssh.Signer` non-exportable CA signing + `SSH_AUTH_SOCK` agent support) | `src/pkg/pki`, `src/pkg/sshca` | `operational` | `go test -race ./src/pkg/pki ./src/pkg/sshca` |
-| `CAP-PROBE-001` | **Live TLS & Mutual TLS Endpoint Prober & Cipher Auditor** (`mgtls probe --addr host:port`, `--strict`, and MCP tool `pki_probe` — 19 MCP tools total) | `src/pkg/pki` | `operational` | `go test -race ./src/pkg/pki` |
+| `CAP-PROBE-001` | **Live TLS & Mutual TLS Endpoint Prober & Cipher Auditor** (`mgtls probe --addr host:port`, `--strict`, and MCP tool `pki_probe`) | `src/pkg/pki` | `operational` | `go test -race ./src/pkg/pki` |
+| `CAP-OCSP-001` | **RFC 6960 OCSP Responder & Stapling Verification Engine** (`mgtls ocsp serve`, `mgtls ocsp verify`, RFC 6960 §4.2.2.2 Ed25519 delegated OCSP signing, and MCP tool `pki_ocsp_verify` — 20 MCP tools total) | `src/pkg/pki` | `operational` | `go test -race ./src/pkg/pki` |
 
 ## Planned Capabilities (`v1.3.0+`)
 
 | ID | Capability | Target Version | Status |
 | :--- | :--- | :--- | :--- |
-| `CAP-OCSP-001` | **RFC 6960 OCSP Responder & Stapling Verification Engine** | `v1.3.0` | `planned` |
+| `CAP-CSR-001` | **PKCS#10 CSR Generation & External Signing Engine** | `v1.3.0` | `planned` |

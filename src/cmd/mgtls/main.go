@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -83,6 +84,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return runSystemd(storeDir, rest, stdout)
 	case "probe":
 		return runProbe(storeDir, rest, stdout)
+	case "ocsp":
+		return runOCSP(ctx, storeDir, rest, stdout)
 	case "mcp":
 		return runMCP(ctx, storeDir, rest, stdin, stdout)
 	default:
@@ -127,6 +130,7 @@ Commands:
   watch                      Autonomous renewal loop (monitors expirations, re-issues certs, runs --on-renew hooks)
   systemd generate           Generate systemd .service & .timer units for unattended renewal
   probe                      Probe a live TLS/mTLS endpoint (protocol, cipher suite, peer chain, SANs & CA trust)
+  ocsp <serve|verify>        RFC 6960 HTTP OCSP responder & certificate/stapling verifier
   mcp serve                  Run the Model Context Protocol (MCP) JSON-RPC 2.0 server (stdio or HTTP/mTLS)
   guide                      View the full end-to-end onboarding & workflow guide
   version                    Print version
@@ -1124,4 +1128,66 @@ func runProbe(defaultStoreDir string, args []string, stdout io.Writer) error {
 		}
 	}
 	return nil
+}
+
+func runOCSP(ctx context.Context, defaultStoreDir string, args []string, stdout io.Writer) error {
+	if len(args) == 0 {
+		return errors.New("ocsp subcommand required: serve or verify")
+	}
+	sub := args[0]
+	rest := args[1:]
+	switch sub {
+	case "serve":
+		fs := flag.NewFlagSet("ocsp serve", flag.ContinueOnError)
+		storeDir := fs.String("store-dir", defaultStoreDir, "Store directory")
+		caName := fs.String("ca", "root-ca", "CA name in .mgtls store to sign OCSP responses")
+		addr := fs.String("addr", "127.0.0.1:8888", "Listen address for HTTP OCSP responder")
+		nextUpdate := fs.Duration("next-update", 24*time.Hour, "OCSP NextUpdate validity window")
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		s, err := store.New(*storeDir)
+		if err != nil {
+			return err
+		}
+		return pki.ServeOCSP(ctx, s, pki.OCSPResponderOptions{
+			CAName:             *caName,
+			ListenAddr:         *addr,
+			NextUpdateDuration: *nextUpdate,
+		})
+
+	case "verify":
+		fs := flag.NewFlagSet("ocsp verify", flag.ContinueOnError)
+		storeDir := fs.String("store-dir", defaultStoreDir, "Store directory")
+		certName := fs.String("name", "", "Certificate name in .mgtls store")
+		certPath := fs.String("cert", "", "Certificate PEM path")
+		caName := fs.String("ca", "", "Issuing CA name in .mgtls store")
+		caCert := fs.String("ca-cert", "", "Issuing CA certificate PEM path")
+		responderURL := fs.String("url", "", "Optional HTTP OCSP responder URL")
+		stapledAddr := fs.String("stapled", "", "Optional live TLS host:port to verify OCSP stapling")
+		timeout := fs.Duration("timeout", 5*time.Second, "Timeout for OCSP query or TLS dial")
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		s, err := store.New(*storeDir)
+		if err != nil {
+			return err
+		}
+		rep, err := pki.VerifyOCSP(s, pki.VerifyOCSPRequest{
+			CertName:       *certName,
+			CertPath:       *certPath,
+			CAName:         *caName,
+			CACertPath:     *caCert,
+			ResponderURL:   *responderURL,
+			StapledAddress: *stapledAddr,
+			Timeout:        *timeout,
+		})
+		if err != nil {
+			return err
+		}
+		return writeJSON(stdout, rep)
+
+	default:
+		return fmt.Errorf("unknown ocsp subcommand %q (expected serve or verify)", sub)
+	}
 }
