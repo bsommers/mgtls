@@ -1,7 +1,7 @@
 # `mgtls` Forward Roadmap
 
-**Completed Releases:** `v1.0.0`, `v1.1.0`, `v1.1.1`, `v1.2.0` (`0607655`)  
-**Next Target Milestone:** `v1.3.0`
+**Completed Releases:** `v1.0.0`, `v1.1.0`, `v1.1.1`, `v1.2.0` (`0607655`), `v1.3.0`  
+**Next Target Milestone:** `v1.4.0`
 
 ---
 
@@ -16,11 +16,11 @@
 
 ---
 
-## Proposed `v1.3.0` Roadmap Options
+## Completed `v1.3.0` Roadmap Options
 
 | # | Option | Scope & Value |
 | :--- | :--- | :--- |
-| **Option A** | **`[x] COMPLETED` — RFC 6960 OCSP Responder & Stapling Verifier (`CAP-OCSP-001`)** | Added `mgtls ocsp serve` (`src/pkg/pki/ocsp.go`, including RFC 6960 §4.2.2.2 delegated OCSP signing for Ed25519 CAs), `mgtls ocsp verify` (in-store, HTTP responder URL, and live TLS OCSP stapling verification), and MCP tool `pki_ocsp_verify` (20th MCP tool). |
-| **Option B** | **`[x] COMPLETED` — Live TLS / mTLS Endpoint Prober & Cipher Auditor (`CAP-PROBE-001`)** | Added `mgtls probe --addr host:port` (`src/pkg/pki/probe.go`) and MCP tool `pki_probe` to connect to live TLS/mTLS endpoints, inspect negotiated TLS version/cipher suite/ALPN, verify peer chain against `.mgtls` CAs, check SANs/expiry, and emit JSON diagnostics. |
-| **Option C** | **`[x] COMPLETED` — CSR (`PKCS#10`) Workflow & External CA Signing (`CAP-CSR-001`)** | Add `mgtls csr create` and `mgtls csr sign` so external workloads can generate private keys locally, submit only a PKCS#10 `.csr.pem` to `mgtls` (via CLI or MCP `mgtls_csr_sign`), and receive a signed X.509 certificate without `mgtls` ever holding the leaf private key. Shipped as `src/pkg/pki/csr.go`, `mgtls csr create|sign`, MCP `pki_csr_sign` (21st tool). CSR extensions are ignored; only CN/SANs are honored. |
-| **Option D** | **`[x] COMPLETED` — Encrypted-at-Rest Private Key Store (`CAP-VAULT-001`)** | Optional passphrase / environment-key (`MGTLS_PASSPHRASE` / `MGTLS_KEYFILE`) AES-256-GCM envelope encryption for `.mgtls/*/keys/*.key.pem` so private keys on disk are encrypted at rest while remaining zero-CGO. Shipped as `src/pkg/store/vault.go` + `mgtls vault status|seal|unseal|rotate`; covers CA, SSH CA, and ACME account keys (leaf keys stay plaintext as deployment artifacts). |
+| **Option A** | **`[x] COMPLETED (07955b4)` — RFC 6960 OCSP Responder & Stapling Verifier (`CAP-OCSP-001`)** | Added `mgtls ocsp serve` (`src/pkg/pki/ocsp.go`, including RFC 6960 §4.2.2.2 delegated OCSP signing for Ed25519 CAs), `mgtls ocsp verify` (in-store, HTTP responder URL, and live TLS OCSP stapling verification), and MCP tool `pki_ocsp_verify` (20th MCP tool). |
+| **Option B** | **`[x] COMPLETED (61f20e2)` — Live TLS / mTLS Endpoint Prober & Cipher Auditor (`CAP-PROBE-001`)** | Added `mgtls probe --addr host:port` (`src/pkg/pki/probe.go`) and MCP tool `pki_probe` to connect to live TLS/mTLS endpoints, inspect negotiated TLS version/cipher suite/ALPN, verify peer chain against `.mgtls` CAs, check SANs/expiry, and emit JSON diagnostics. |
+| **Option C** | **`[x] COMPLETED (47bf6a5)` — CSR (`PKCS#10`) Workflow & External CA Signing (`CAP-CSR-001`)** | Added `mgtls csr create` and `mgtls csr sign` (`src/pkg/pki/csr.go`) plus MCP tool `pki_csr_sign` (21st tool) so external workloads generate private keys locally, submit only a PKCS#10 `.csr.pem`, and receive a signed X.509 certificate without `mgtls` ever holding the leaf private key. CSR extensions are ignored; only CN/SANs are honored. |
+| **Option D** | **`[x] COMPLETED (47bf6a5)` — Encrypted-at-Rest Private Key Store (`CAP-VAULT-001`)** | Added `src/pkg/store/vault.go` + `mgtls vault status|seal|unseal|rotate` with AES-256-GCM envelope encryption (`MGTLS_KEYFILE` HKDF-SHA256 / `MGTLS_PASSPHRASE` scrypt N=32768) for CA, SSH CA, and ACME account private keys while keeping leaf keys plaintext as deployment artifacts. |

@@ -131,7 +131,7 @@ func (srv *Server) HandleJSONRPC(ctx context.Context, raw []byte) ([]byte, error
 			},
 			"serverInfo": map[string]any{
 				"name":    "mgtls",
-				"version": "1.2.0",
+				"version": "1.3.0",
 			},
 		}
 		return marshalResult(id, res)

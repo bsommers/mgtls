@@ -5,14 +5,19 @@ All notable changes to `mgtls` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.0] - 2026-11-08
 
 ### Added
-- **PKCS#10 CSR Workflow (`src/pkg/pki/csr.go` — `CAP-CSR-001`)**: `mgtls csr create` (local key + CSR, refuses to overwrite keys, `--key` to reuse) and `mgtls csr sign` (`--csr file|-`, `--role`, `--days`, `--out`); MCP tool `pki_csr_sign` (21 tools). Verifies the CSR proof-of-possession signature, rejects RSA <2048 / ECDSA <P-256, takes only CN/SANs from the CSR (requested CA/EKU/key-usage extensions are ignored), caps validity at the CA's `NotAfter`. Issued certs are flagged `external` in the manifest and have no key path; `doctor` accepts them and `watch` reports them under `external_expiring` instead of attempting re-issuance.
+- **Live TLS & Mutual TLS Endpoint Prober & Cipher Auditor (`src/pkg/pki/probe.go` — `CAP-PROBE-001`)**: `mgtls probe --addr host:port` (`--sni`, `--ca`, `--cert`, `--strict`, `--timeout`) and MCP tool `pki_probe` to connect to live TLS/mTLS endpoints, inspect negotiated TLS version/cipher suite/ALPN, verify peer chain against `.mgtls` CAs, check SANs/expiry, and emit JSON diagnostics.
+- **RFC 6960 OCSP Responder & Stapling Verification Engine (`src/pkg/pki/ocsp.go` — `CAP-OCSP-001`)**: `mgtls ocsp serve` (HTTP POST/GET responder with RFC 6960 §4.2.2.2 delegated OCSP signing for `Ed25519` CAs), `mgtls ocsp verify` (in-store, HTTP responder URL, and live TLS OCSP stapling verification), and MCP tool `pki_ocsp_verify`.
+- **PKCS#10 CSR Workflow (`src/pkg/pki/csr.go` — `CAP-CSR-001`)**: `mgtls csr create` (local key + CSR, refuses to overwrite keys, `--key` to reuse) and `mgtls csr sign` (`--csr file|-`, `--role`, `--days`, `--out`); MCP tool `pki_csr_sign` (21 MCP tools total). Verifies the CSR proof-of-possession signature, rejects RSA <2048 / ECDSA <P-256, takes only CN/SANs from the CSR (requested CA/EKU/key-usage extensions are ignored), caps validity at the CA's `NotAfter`. Issued certs are flagged `external` in the manifest and have no key path; `doctor` accepts them and `watch` reports them under `external_expiring` instead of attempting re-issuance.
 - **Encrypted-at-Rest Key Vault (`src/pkg/store/vault.go` — `CAP-VAULT-001`)**: set `MGTLS_KEYFILE` (preferred; >=32 bytes, mode 0600, HKDF-SHA256) or `MGTLS_PASSPHRASE` (scrypt N=32768) and CA, SSH CA, and ACME account private keys are stored as AES-256-GCM `MGTLS ENCRYPTED KEY` PEM envelopes. Reads transparently accept sealed or plaintext files. `mgtls vault status|seal|unseal|rotate` migrate in place (all-or-nothing, atomic replace; `rotate` uses `MGTLS_NEW_KEYFILE`/`MGTLS_NEW_PASSPHRASE`). Leaf-certificate keys are deliberately not encrypted (consumed by external software).
 
 ### Fixed
 - ACME account key loading no longer regenerates (and overwrites) a key it merely failed to read/decrypt.
+
+### Verification Telemetry
+- **Static Analysis & Full Test Suite**: `go vet ./...` (`0` warnings) and `go test -race ./src/...` (`9/9` packages passing, 0 data races).
 
 ## [1.2.0] - 2026-11-06
 

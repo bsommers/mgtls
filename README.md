@@ -4,10 +4,10 @@
 
 <br />
 
-[![Release](https://img.shields.io/github/v/release/bsommers/mgtls?style=flat-square&color=10b981)](https://github.com/bsommers/mgtls/releases/tag/v1.2.0)
+[![Release](https://img.shields.io/github/v/release/bsommers/mgtls?style=flat-square&color=10b981)](https://github.com/bsommers/mgtls/releases/tag/v1.3.0)
 [![Go Version](https://img.shields.io/badge/Go-1.26-00ADD8?style=flat-square&logo=go)](https://go.dev/)
 [![CGO_ENABLED=0](https://img.shields.io/badge/CGO__ENABLED-0-06b6d4?style=flat-square)](https://github.com/bsommers/mgtls)
-[![MCP Protocol](https://img.shields.io/badge/MCP-2024--11--05%20%7C%2018%20Tools-a855f7?style=flat-square)](https://bsommers.github.io/mgtls/#mcp)
+[![MCP Protocol](https://img.shields.io/badge/MCP-2024--11--05%20%7C%2021%20Tools-a855f7?style=flat-square)](https://bsommers.github.io/mgtls/#mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-3b82f6?style=flat-square)](LICENSE)
 [![GitHub Pages](https://img.shields.io/badge/Docs-GitHub%20Pages-10b981?style=flat-square&logo=github)](https://bsommers.github.io/mgtls/)
 
@@ -122,7 +122,7 @@ flowchart TD
 
     subgraph Orchestration["Declarative & Agent Orchestration"]
         Profile["src/pkg/profile\nDeclarative Fleet Engine (mgtls.yaml) & Doctor"]
-        MCPServer["src/pkg/mcpserver\n18 MCP Tools · 3 Resources · 3 Guided Prompts"]
+        MCPServer["src/pkg/mcpserver\n21 MCP Tools · 3 Resources · 3 Guided Prompts"]
     end
 
     subgraph Subsystems["Core Cryptographic & Scaffolding Subsystems"]
@@ -296,7 +296,7 @@ mgtls ssh config-bundle --name corp-ssh-fleet \
 | **Capabilities Manifest** | [`docs/CAPABILITIES.md`](docs/CAPABILITIES.md) | Machine-verifiable capabilities registry (`docs/capabilities.json`) and roadmap |
 | **Test Coverage & Suite Report** | [`docs/TEST_COVERAGE.md`](docs/TEST_COVERAGE.md) | Instrumented coverage report (`83.2%`), P0/P1/P2 gap remediation, E2E example/cookbook matrix, and Shell Test-Quality Checklist |
 | **5-Axis Code Review & Audit** | [`docs/CODE_REVIEW.md`](docs/CODE_REVIEW.md) | Multi-axis code review (Correctness, Readability, Architecture, Security, Performance), severity-labeled findings, and security hardening verification |
-| **Forward Roadmap (`v1.2.0+`)** | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Saved backlog of upcoming options (Option 2: New Target Generators, Option 3: `mgtls watch` Renewal Daemon, Option 4: Hardware-Backed Root CA / KMS) |
+| **Forward Roadmap (`v1.3.0+`)** | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Completed `v1.2.0` & `v1.3.0` capability milestones (OCSP responder/verifier, TLS/mTLS prober, PKCS#10 CSR signing, encrypted key vault) and upcoming roadmap |
 | **Changelog** | [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | Release history and verification telemetry |
 
 ---
