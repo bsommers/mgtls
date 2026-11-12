@@ -90,6 +90,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return runCSR(storeDir, rest, stdin, stdout)
 	case "vault":
 		return runVault(storeDir, rest, stdout)
+	case "est":
+		return runEST(ctx, storeDir, rest, stdout)
 	case "mcp":
 		return runMCP(ctx, storeDir, rest, stdin, stdout)
 	default:
@@ -137,6 +139,7 @@ Commands:
   ocsp <serve|verify>        RFC 6960 HTTP OCSP responder & certificate/stapling verifier
   csr <create|sign>          PKCS#10 workflow: create key+CSR locally, sign a CSR with a managed CA (no leaf key held)
   vault <status|seal|unseal|rotate>  Encrypt CA/SSH-CA/ACME-account private keys at rest (MGTLS_KEYFILE / MGTLS_PASSPHRASE)
+  est <serve|cacerts|enroll|reenroll>  RFC 7030 Enrollment over Secure Transport (EST) server & client
   mcp serve                  Run the Model Context Protocol (MCP) JSON-RPC 2.0 server (stdio or HTTP/mTLS)
   guide                      View the full end-to-end onboarding & workflow guide
   version                    Print version
@@ -1306,4 +1309,139 @@ func runVault(defaultStoreDir string, args []string, stdout io.Writer) error {
 		return err
 	}
 	return writeJSON(stdout, rep)
+}
+
+func runEST(ctx context.Context, defaultStoreDir string, args []string, stdout io.Writer) error {
+	if len(args) == 0 {
+		return errors.New("est subcommand required: serve | cacerts | enroll | reenroll")
+	}
+	sub, rest := args[0], args[1:]
+	switch sub {
+	case "serve":
+		fs := flag.NewFlagSet("est serve", flag.ContinueOnError)
+		storeDir := fs.String("store-dir", defaultStoreDir, "Store directory")
+		caName := fs.String("ca", "root-ca", "Default issuing CA name in .mgtls store")
+		addr := fs.String("addr", "127.0.0.1:8445", "Listen address for RFC 7030 EST server")
+		token := fs.String("token", "", "Bootstrap enrollment token (Bearer or Basic password)")
+		allowMTLS := fs.Bool("allow-mtls", true, "Allow mTLS client certificate authentication verified against CA")
+		role := fs.String("role", "mtls", "Default leaf role (server, client, mtls)")
+		days := fs.Int("days", 365, "Default validity days for enrolled certificates")
+		tlsCertName := fs.String("tls-cert-name", "", "Optional .mgtls certificate name for EST server TLS listener")
+		tlsCert := fs.String("tls-cert", "", "Optional PEM certificate path for EST server TLS listener")
+		tlsKey := fs.String("tls-key", "", "Optional PEM private key path for EST server TLS listener")
+		insecureHTTP := fs.Bool("insecure-http", false, "Serve plain HTTP (for testing or behind TLS proxy)")
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		s, err := store.New(*storeDir)
+		if err != nil {
+			return err
+		}
+		return pki.ServeEST(ctx, s, pki.ESTServerOptions{
+			CAName:       *caName,
+			ListenAddr:   *addr,
+			EnrollToken:  *token,
+			AllowMTLS:    *allowMTLS,
+			Role:         *role,
+			ValidDays:    *days,
+			TLSCertName:  *tlsCertName,
+			TLSCertPath:  *tlsCert,
+			TLSKeyPath:   *tlsKey,
+			InsecureHTTP: *insecureHTTP,
+		})
+
+	case "cacerts":
+		fs := flag.NewFlagSet("est cacerts", flag.ContinueOnError)
+		storeDir := fs.String("store-dir", defaultStoreDir, "Store directory")
+		serverURL := fs.String("url", "", "EST server base URL (e.g. https://127.0.0.1:8445)")
+		label := fs.String("label", "", "Optional CA label in /.well-known/est/<label>/cacerts")
+		caName := fs.String("ca", "", "Optional .mgtls CA name for TLS verification")
+		caCert := fs.String("ca-cert", "", "Optional CA certificate PEM path for TLS verification")
+		insecure := fs.Bool("insecure", false, "Skip TLS verification when bootstrapping CA certs")
+		out := fs.String("out", "", "Optional path to write retrieved CA chain PEM")
+		timeout := fs.Duration("timeout", 10*time.Second, "HTTP request timeout")
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		s, err := store.New(*storeDir)
+		if err != nil {
+			return err
+		}
+		res, err := pki.ESTFetchCACerts(s, pki.ESTCACertsRequest{
+			ServerURL:      *serverURL,
+			CALabel:        *label,
+			CAName:         *caName,
+			CACertPath:     *caCert,
+			InsecureSkip:   *insecure,
+			OutPath:        *out,
+			RequestTimeout: *timeout,
+		})
+		if err != nil {
+			return err
+		}
+		return writeJSON(stdout, res)
+
+	case "enroll", "reenroll":
+		fs := flag.NewFlagSet("est "+sub, flag.ContinueOnError)
+		storeDir := fs.String("store-dir", defaultStoreDir, "Store directory")
+		serverURL := fs.String("url", "", "EST server base URL (e.g. https://127.0.0.1:8445)")
+		label := fs.String("label", "", "Optional CA label in /.well-known/est/<label>/simpleenroll")
+		name := fs.String("name", "", "Certificate/key base name")
+		cn := fs.String("cn", "", "Common Name (default: --name)")
+		org := fs.String("org", "", "Organization")
+		algo := fs.String("algo", "ecdsa-p256", "Key algorithm (ed25519, ecdsa-p256, ecdsa-p384, rsa-2048, rsa-4096)")
+		dns := fs.String("dns", "", "Comma-separated DNS SANs")
+		ips := fs.String("ip", "", "Comma-separated IP SANs")
+		uris := fs.String("uri", "", "Comma-separated URI SANs")
+		role := fs.String("role", "", "Requested role (server, client, mtls)")
+		csrPath := fs.String("csr", "", "Optional existing PKCS#10 .csr.pem path")
+		existingKey := fs.String("key", "", "Optional existing PEM private key path to reuse")
+		outDir := fs.String("out-dir", ".", "Output directory for key, CSR, and enrolled certificate")
+		token := fs.String("token", "", "Bootstrap enrollment token (Bearer)")
+		caName := fs.String("ca", "", "Optional .mgtls CA name for TLS verification")
+		caCert := fs.String("ca-cert", "", "Optional CA certificate PEM path for TLS verification")
+		clientCertName := fs.String("client-cert-name", "", "Optional .mgtls certificate name for mTLS auth")
+		clientCert := fs.String("client-cert", "", "Optional client certificate PEM path for mTLS auth")
+		clientKey := fs.String("client-key", "", "Optional client private key PEM path for mTLS auth")
+		insecure := fs.Bool("insecure", false, "Skip TLS server certificate verification")
+		timeout := fs.Duration("timeout", 10*time.Second, "HTTP request timeout")
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		s, err := store.New(*storeDir)
+		if err != nil {
+			return err
+		}
+		res, err := pki.ESTEnroll(s, pki.ESTEnrollRequest{
+			ServerURL:      *serverURL,
+			CALabel:        *label,
+			Reenroll:       sub == "reenroll",
+			Name:           *name,
+			CommonName:     *cn,
+			Organization:   *org,
+			Algorithm:      *algo,
+			DNSNames:       splitCSV(*dns),
+			IPAddresses:    splitCSV(*ips),
+			URIs:           splitCSV(*uris),
+			Role:           *role,
+			CSRPath:        *csrPath,
+			ExistingKey:    *existingKey,
+			OutDir:         *outDir,
+			Token:          *token,
+			CAName:         *caName,
+			CACertPath:     *caCert,
+			ClientCertName: *clientCertName,
+			ClientCertPath: *clientCert,
+			ClientKeyPath:  *clientKey,
+			InsecureSkip:   *insecure,
+			RequestTimeout: *timeout,
+		})
+		if err != nil {
+			return err
+		}
+		return writeJSON(stdout, res)
+
+	default:
+		return fmt.Errorf("unknown est subcommand %q (expected serve, cacerts, enroll, or reenroll)", sub)
+	}
 }

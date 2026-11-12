@@ -2,12 +2,12 @@
 
 Machine-readable manifest: [`docs/capabilities.json`](capabilities.json)
 
-- **Total Capabilities**: `16`
-- **Operational**: `15`
+- **Total Capabilities**: `19`
+- **Operational**: `16`
 - **Beta**: `0`
-- **Planned**: `1`
+- **Planned**: `3`
 
-## Operational Capabilities (`v1.3.0`)
+## Operational Capabilities (`v1.3.0+`)
 
 | ID | Capability | Package / Path | Status | Verification Command |
 | :--- | :--- | :--- | :--- | :--- |
@@ -26,9 +26,12 @@ Machine-readable manifest: [`docs/capabilities.json`](capabilities.json)
 | `CAP-OCSP-001` | **RFC 6960 OCSP Responder & Stapling Verification Engine** (`mgtls ocsp serve`, `mgtls ocsp verify`, RFC 6960 §4.2.2.2 Ed25519 delegated OCSP signing, and MCP tool `pki_ocsp_verify` — 20 MCP tools total) | `src/pkg/pki` | `operational` | `go test -race ./src/pkg/pki` |
 | `CAP-CSR-001` | **PKCS#10 CSR Workflow & External CA Signing** (`mgtls csr create`, `mgtls csr sign`, MCP tool `pki_csr_sign` — 21 MCP tools total; leaf key never held by mgtls) | `src/pkg/pki` | `operational` | `go test -race ./src/pkg/pki` |
 | `CAP-VAULT-001` | **Encrypted-at-Rest CA Key Vault** (AES-256-GCM envelope, scrypt/HKDF KEK via `MGTLS_PASSPHRASE`/`MGTLS_KEYFILE`, `mgtls vault status|seal|unseal|rotate`) | `src/pkg/store` | `operational` | `go test -race ./src/pkg/store` |
+| `CAP-EST-001` | **RFC 7030 Enrollment over Secure Transport (EST) Server & Client** (`mgtls est serve|cacerts|enroll|reenroll`, PKCS#7 `certs-only` DER, constant-time token & mTLS auth, MCP `pki_est_enroll` — 22 MCP tools total) | `src/pkg/pki` | `operational` | `go test -race ./src/pkg/pki` |
 
-## Planned Capabilities (`v1.4.0+`)
+## Planned Capabilities (`v1.4.0`)
 
 | ID | Capability | Target Version | Status |
 | :--- | :--- | :--- | :--- |
-| `CAP-EST-001` | **RFC 7030 Enrollment over Secure Transport (EST) & SCEP Server** | `v1.4.0` | `planned` |
+| `CAP-SPIFFE-001` | **SPIFFE / SPIRE X.509-SVID & Trust Bundle Support** | `v1.4.0` | `planned` |
+| `CAP-AUDIT-001` | **Tamper-Evident Cryptographic Audit Log (Hash-Chained Ledger)** | `v1.4.0` | `planned` |
+| `CAP-SCAN-001` | **Trust Bundle Compiler & Multi-Endpoint TLS Scanner** | `v1.4.0` | `planned` |

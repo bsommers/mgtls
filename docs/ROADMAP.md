@@ -24,3 +24,14 @@
 | **Option B** | **`[x] COMPLETED (61f20e2)` — Live TLS / mTLS Endpoint Prober & Cipher Auditor (`CAP-PROBE-001`)** | Added `mgtls probe --addr host:port` (`src/pkg/pki/probe.go`) and MCP tool `pki_probe` to connect to live TLS/mTLS endpoints, inspect negotiated TLS version/cipher suite/ALPN, verify peer chain against `.mgtls` CAs, check SANs/expiry, and emit JSON diagnostics. |
 | **Option C** | **`[x] COMPLETED (47bf6a5)` — CSR (`PKCS#10`) Workflow & External CA Signing (`CAP-CSR-001`)** | Added `mgtls csr create` and `mgtls csr sign` (`src/pkg/pki/csr.go`) plus MCP tool `pki_csr_sign` (21st tool) so external workloads generate private keys locally, submit only a PKCS#10 `.csr.pem`, and receive a signed X.509 certificate without `mgtls` ever holding the leaf private key. CSR extensions are ignored; only CN/SANs are honored. |
 | **Option D** | **`[x] COMPLETED (47bf6a5)` — Encrypted-at-Rest Private Key Store (`CAP-VAULT-001`)** | Added `src/pkg/store/vault.go` + `mgtls vault status|seal|unseal|rotate` with AES-256-GCM envelope encryption (`MGTLS_KEYFILE` HKDF-SHA256 / `MGTLS_PASSPHRASE` scrypt N=32768) for CA, SSH CA, and ACME account private keys while keeping leaf keys plaintext as deployment artifacts. |
+
+---
+
+## Target `v1.4.0` Roadmap Options (In Order)
+
+| # | Option | Status | Scope & Value |
+| :--- | :--- | :--- | :--- |
+| **Option 1** | **RFC 7030 Enrollment over Secure Transport (EST) Server & Client (`CAP-EST-001`)** | `[x] COMPLETED` | Added `src/pkg/pki/est.go`, `mgtls est serve|enroll|reenroll|cacerts` (`/.well-known/est/cacerts`, `/simpleenroll`, `/simplereenroll` with PKCS#7 `certs-only` DER encoding, constant-time bootstrap token auth, and mTLS client-cert auth), and MCP tool `pki_est_enroll` (22nd tool). |
+| **Option 2** | **SPIFFE / SPIRE X.509-SVID & Trust Bundle Support (`CAP-SPIFFE-001`)** | `[ ] NEXT` | Add `src/pkg/pki/spiffe.go`, first-class `spiffe://<trust-domain>/<workload>` URI SAN validation, `mgtls svid issue|verify`, `mgtls bundle export --format spiffe|pem`, and MCP tool `pki_svid_issue`. |
+| **Option 3** | **Tamper-Evident Cryptographic Audit Log (`CAP-AUDIT-001`)** | `[ ] PLANNED` | Append-only SHA-256 hash-chained audit ledger (`.mgtls/audit.jsonl`) recording CA creation, cert issuance, CSR sign, EST enrollment, revocation, and vault operations, plus `mgtls audit list|verify` and MCP tool `pki_audit_verify`. |
+| **Option 4** | **Trust Bundle Compiler & Multi-Endpoint TLS Scanner (`CAP-SCAN-001`)** | `[ ] PLANNED` | Multi-CA trust bundle compiler (`PEM`, `PKCS#7/.p7b`, `PKCS#12` truststore) and concurrent multi-target TLS inventory scanner (`mgtls scan --targets ...`) built on `ProbeEndpoint`. |

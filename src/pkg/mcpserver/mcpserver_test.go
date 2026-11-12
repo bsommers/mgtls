@@ -582,6 +582,7 @@ certs:
 		{"pki_ocsp_verify", map[string]any{}},
 		{"pki_csr_sign", map[string]any{}},
 		{"pki_csr_sign", map[string]any{"ca_name": "root-ca", "csr_pem": "not a csr"}},
+		{"pki_est_enroll", map[string]any{}},
 	} {
 		res := callRPC(t, srv, "tools/call", map[string]any{
 			"name":      tc.name,

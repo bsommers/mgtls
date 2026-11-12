@@ -536,6 +536,36 @@ func (srv *Server) listTools() []mcpTool {
 				"required": []string{"ca_name"},
 			},
 		},
+		{
+			Name:        "pki_est_enroll",
+			Description: "Enroll or re-enroll an X.509 certificate (or fetch CA certs) against an RFC 7030 Enrollment over Secure Transport (EST) server (/.well-known/est/simpleenroll, /simplereenroll, /cacerts)",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"server_url":           map[string]any{"type": "string", "description": "Base URL of the RFC 7030 EST server (e.g. https://127.0.0.1:8445)"},
+					"operation":            map[string]any{"type": "string", "description": "enroll (default), reenroll, or cacerts"},
+					"ca_label":             map[string]any{"type": "string", "description": "Optional CA label in /.well-known/est/<label>/..."},
+					"name":                 map[string]any{"type": "string", "description": "Certificate/key base name"},
+					"common_name":          map[string]any{"type": "string", "description": "Subject Common Name"},
+					"algorithm":            map[string]any{"type": "string", "description": "Key algorithm (ed25519, ecdsa-p256, ecdsa-p384, rsa-2048, rsa-4096)"},
+					"dns_names":            map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+					"ip_addresses":         map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+					"uris":                 map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+					"role":                 map[string]any{"type": "string", "description": "server, client, or mtls"},
+					"csr_pem":              map[string]any{"type": "string", "description": "Optional inline PKCS#10 CSR PEM"},
+					"csr_path":             map[string]any{"type": "string", "description": "Optional PKCS#10 CSR file path"},
+					"out_dir":              map[string]any{"type": "string", "description": "Output directory for generated key and enrolled cert"},
+					"token":                map[string]any{"type": "string", "description": "Bootstrap enrollment token (Bearer)"},
+					"ca_name":              map[string]any{"type": "string", "description": "Optional .mgtls CA name for TLS verification"},
+					"ca_cert_path":         map[string]any{"type": "string", "description": "Optional CA PEM path for TLS verification"},
+					"client_cert_name":     map[string]any{"type": "string", "description": "Optional .mgtls client cert name for mTLS auth"},
+					"client_cert_path":     map[string]any{"type": "string", "description": "Optional client cert PEM path for mTLS auth"},
+					"client_key_path":      map[string]any{"type": "string", "description": "Optional client key PEM path for mTLS auth"},
+					"insecure_skip_verify": map[string]any{"type": "boolean", "description": "Skip TLS verification when bootstrapping"},
+				},
+				"required": []string{"server_url"},
+			},
+		},
 	}
 }
 
@@ -829,6 +859,32 @@ func (srv *Server) dispatchTool(ctx context.Context, name string, rawArgs json.R
 			return nil, err
 		}
 		return pki.SignCSR(srv.Store, req)
+
+	case "pki_est_enroll":
+		var args struct {
+			pki.ESTEnrollRequest
+			Operation string `json:"operation,omitempty"`
+			OutPath   string `json:"out_path,omitempty"`
+		}
+		if err := decodeArgs(rawArgs, &args); err != nil {
+			return nil, err
+		}
+		switch strings.ToLower(strings.TrimSpace(args.Operation)) {
+		case "cacerts":
+			return pki.ESTFetchCACerts(srv.Store, pki.ESTCACertsRequest{
+				ServerURL:    args.ServerURL,
+				CALabel:      args.CALabel,
+				CAName:       args.CAName,
+				CACertPath:   args.CACertPath,
+				InsecureSkip: args.InsecureSkip,
+				OutPath:      args.OutPath,
+			})
+		case "reenroll":
+			args.Reenroll = true
+			return pki.ESTEnroll(srv.Store, args.ESTEnrollRequest)
+		default:
+			return pki.ESTEnroll(srv.Store, args.ESTEnrollRequest)
+		}
 
 	default:
 		return nil, fmt.Errorf("unknown tool %q", name)

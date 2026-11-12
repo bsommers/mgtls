@@ -5,10 +5,10 @@
   "repository": "https://github.com/bsommers/mgtls",
   "homepage": "https://bsommers.github.io/mgtls/",
   "summary": {
-    "total_capabilities": 16,
-    "operational": 15,
+    "total_capabilities": 19,
+    "operational": 16,
     "beta": 0,
-    "planned": 1
+    "planned": 3
   },
   "capabilities": [
     {
@@ -133,7 +133,29 @@
     },
     {
       "id": "CAP-EST-001",
-      "name": "RFC 7030 Enrollment over Secure Transport (EST) & SCEP Server",
+      "name": "RFC 7030 Enrollment over Secure Transport (EST) Server & Client (mgtls est serve/cacerts/enroll/reenroll & MCP pki_est_enroll)",
+      "status": "operational",
+      "since": "1.4.0",
+      "package": "src/pkg/pki",
+      "verification": "go test -race ./src/pkg/pki"
+    },
+    {
+      "id": "CAP-SPIFFE-001",
+      "name": "SPIFFE / SPIRE X.509-SVID & Trust Bundle Support",
+      "status": "planned",
+      "target_version": "1.4.0",
+      "package": "src/pkg/pki"
+    },
+    {
+      "id": "CAP-AUDIT-001",
+      "name": "Tamper-Evident Cryptographic Audit Log (Hash-Chained Ledger)",
+      "status": "planned",
+      "target_version": "1.4.0",
+      "package": "src/pkg/store"
+    },
+    {
+      "id": "CAP-SCAN-001",
+      "name": "Trust Bundle Compiler & Multi-Endpoint TLS Scanner",
       "status": "planned",
       "target_version": "1.4.0",
       "package": "src/pkg/pki"

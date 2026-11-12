@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sysadmin/mgtls/src/pkg/acme"
 )
@@ -315,9 +316,12 @@ func TestCLIFlagsHelpVersionAndNegativePaths(t *testing.T) {
 		if out, err := runArgs("--store-dir", storeDir, "doctor"); err != nil && strings.Contains(out, "ext.internal") {
 			t.Fatalf("doctor must accept CSR-signed certs without keys: %s", out)
 		}
-		for _, sub := range []string{"status", "seal", "unseal", "rotate"} {
-			t.Setenv("MGTLS_PASSPHRASE", "cli-pass")
-			t.Setenv("MGTLS_NEW_PASSPHRASE", "cli-pass-2")
+		t.Setenv("MGTLS_PASSPHRASE", "cli-pass")
+		t.Setenv("MGTLS_NEW_PASSPHRASE", "cli-pass-2")
+		for _, sub := range []string{"status", "seal", "rotate", "unseal"} {
+			if sub == "unseal" {
+				t.Setenv("MGTLS_PASSPHRASE", "cli-pass-2")
+			}
 			if out, err := runArgs("--store-dir", storeDir, "vault", sub); err != nil {
 				t.Fatalf("vault %s: %v %s", sub, err, out)
 			}
@@ -331,6 +335,40 @@ func TestCLIFlagsHelpVersionAndNegativePaths(t *testing.T) {
 			}
 		}
 		t.Setenv("MGTLS_PASSPHRASE", "")
+
+		// 15. RFC 7030 EST server + cacerts + enroll + reenroll
+		estLn, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		estAddr := estLn.Addr().String()
+		_ = estLn.Close()
+		estCtx, estCancel := context.WithCancel(ctx)
+		estDone := make(chan error, 1)
+		go func() {
+			var o, e bytes.Buffer
+			estDone <- run(estCtx, []string{"--store-dir", storeDir, "est", "serve", "--ca", "root-ca", "--addr", estAddr, "--token", "cli-est-tok"}, strings.NewReader(""), &o, &e)
+		}()
+		estURL := "https://" + estAddr
+		estOutDir := t.TempDir()
+		for range 40 {
+			if _, cErr := runArgs("--store-dir", storeDir, "est", "cacerts", "--url", estURL, "--ca", "root-ca", "--out", filepath.Join(estOutDir, "ca.pem")); cErr == nil {
+				break
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+		enrOut, err := runArgs("--store-dir", storeDir, "est", "enroll", "--url", estURL, "--ca", "root-ca", "--token", "cli-est-tok", "--name", "est-cli-node", "--cn", "est-cli.internal", "--dns", "est-cli.internal", "--out-dir", estOutDir)
+		if err != nil || !strings.Contains(enrOut, "est-cli.internal") {
+			t.Fatalf("est enroll CLI failed: err=%v out=%s", err, enrOut)
+		}
+		reenrOut, err := runArgs("--store-dir", storeDir, "est", "reenroll", "--url", estURL, "--ca", "root-ca", "--name", "est-cli-node", "--cn", "est-cli.internal", "--dns", "est-cli.internal", "--key", filepath.Join(estOutDir, "est-cli-node.key.pem"), "--client-cert", filepath.Join(estOutDir, "est-cli-node.cert.pem"), "--client-key", filepath.Join(estOutDir, "est-cli-node.key.pem"), "--out-dir", t.TempDir())
+		if err != nil || !strings.Contains(reenrOut, "est-cli.internal") {
+			t.Fatalf("est reenroll CLI failed: err=%v out=%s", err, reenrOut)
+		}
+		estCancel()
+		if sErr := <-estDone; sErr != nil {
+			t.Fatalf("est serve CLI error: %v", sErr)
+		}
 	}
 
 	// Negative CLI error paths
@@ -357,6 +395,10 @@ func TestCLIFlagsHelpVersionAndNegativePaths(t *testing.T) {
 		{"csr", "create"},
 		{"vault"},
 		{"vault", "unknown-sub"},
+		{"est"},
+		{"est", "unknown-sub"},
+		{"est", "cacerts"},
+		{"est", "enroll"},
 		{"mcp", "serve", "--transport", "unsupported-proto"},
 	}
 	for _, tc := range errCases {
