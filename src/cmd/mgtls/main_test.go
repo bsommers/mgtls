@@ -316,6 +316,30 @@ func TestCLIFlagsHelpVersionAndNegativePaths(t *testing.T) {
 		if out, err := runArgs("--store-dir", storeDir, "doctor"); err != nil && strings.Contains(out, "ext.internal") {
 			t.Fatalf("doctor must accept CSR-signed certs without keys: %s", out)
 		}
+		// Bundle compile + scan
+		bp := filepath.Join(t.TempDir(), "ts.p12")
+		if _, err := runArgs("--store-dir", storeDir, "bundle", "compile", "--ca", "root-ca", "--format", "p12", "--out", bp); err != nil {
+			t.Fatalf("bundle compile: %v", err)
+		}
+		if _, err := os.Stat(bp); err != nil {
+			t.Fatal(err)
+		}
+		if out, err := runArgs("--store-dir", storeDir, "scan", "--targets", "127.0.0.1:1", "--timeout", "500ms"); err != nil || !strings.Contains(out, `"unreachable": 1`) {
+			t.Fatalf("scan: err=%v out=%s", err, out)
+		}
+		if _, err := runArgs("--store-dir", storeDir, "scan", "--targets", "127.0.0.1:1", "--timeout", "500ms", "--strict"); err == nil {
+			t.Fatal("scan --strict must fail on unreachable")
+		}
+		tf := filepath.Join(t.TempDir(), "t.txt")
+		_ = os.WriteFile(tf, []byte("# c\n127.0.0.1:1 # dead\n"), 0o644)
+		if _, err := runArgs("--store-dir", storeDir, "scan", "--targets-file", tf, "--timeout", "500ms"); err != nil {
+			t.Fatalf("scan targets-file: %v", err)
+		}
+		for _, bad := range [][]string{{"scan"}, {"bundle", "compile"}, {"bundle", "compile", "--ca", "root-ca", "--format", "jks"}} {
+			if _, err := runArgs(append([]string{"--store-dir", storeDir}, bad...)...); err == nil {
+				t.Fatalf("expected error for %v", bad)
+			}
+		}
 		// Audit ledger
 		if out, err := runArgs("--store-dir", storeDir, "audit", "verify"); err != nil || !strings.Contains(out, `"valid": true`) {
 			t.Fatalf("audit verify: err=%v out=%s", err, out)

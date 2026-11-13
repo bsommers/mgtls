@@ -165,6 +165,20 @@ func TestMCPProtocolLifecycleAndTools(t *testing.T) {
 		t.Fatalf("svid bundle: %v", b)
 	}
 
+	// pki_scan (bundle + scan)
+	if b := callToolJSON(t, srv, "pki_scan", map[string]any{"operation": "bundle", "ca_names": []string{"root-ca"}, "format": "p7b"}); b["certs"].(float64) != 1 {
+		t.Fatalf("scan bundle: %v", b)
+	}
+	if sc := callToolJSON(t, srv, "pki_scan", map[string]any{"targets": []string{"127.0.0.1:1"}, "timeout": 500000000}); sc["summary"].(map[string]any)["unreachable"].(float64) != 1 {
+		t.Fatalf("scan: %v", sc)
+	}
+	for _, args := range []map[string]any{{}, {"operation": "bundle"}} {
+		res := callRPC(t, srv, "tools/call", map[string]any{"name": "pki_scan", "arguments": args})
+		if isErr, _ := res["isError"].(bool); !isErr {
+			t.Errorf("pki_scan %v must error", args)
+		}
+	}
+
 	// pki_audit_verify
 	if a := callToolJSON(t, srv, "pki_audit_verify", nil); a["valid"] != true || a["entries"].(float64) < 2 {
 		t.Fatalf("audit verify: %v", a)

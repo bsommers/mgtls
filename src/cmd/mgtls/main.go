@@ -92,6 +92,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return runVault(storeDir, rest, stdout)
 	case "est":
 		return runEST(ctx, storeDir, rest, stdout)
+	case "scan":
+		return runScan(storeDir, rest, stdout)
 	case "audit":
 		return runAudit(storeDir, rest, stdout)
 	case "svid":
@@ -148,7 +150,8 @@ Commands:
   est <serve|cacerts|enroll|reenroll>  RFC 7030 Enrollment over Secure Transport (EST) server & client
   audit <list|verify>        Tamper-evident hash-chained audit ledger (<store>/audit.jsonl)
   svid <issue|verify>        SPIFFE X.509-SVID issue & verification (spiffe://<trust-domain>/<workload>)
-  bundle export              Export a CA trust bundle (--format spiffe|pem)
+  bundle <export|compile>    Export a CA trust bundle (spiffe|pem) / compile multi-CA bundle (pem|p7b|p12)
+  scan --targets a:443,b:8443  Concurrent multi-endpoint TLS inventory scanner
   mcp serve                  Run the Model Context Protocol (MCP) JSON-RPC 2.0 server (stdio or HTTP/mTLS)
   guide                      View the full end-to-end onboarding & workflow guide
   version                    Print version
@@ -1523,8 +1526,32 @@ func runSVID(defaultStoreDir string, args []string, stdout io.Writer) error {
 }
 
 func runBundle(defaultStoreDir string, args []string, stdout io.Writer) error {
+	if len(args) > 0 && args[0] == "compile" {
+		fs := flag.NewFlagSet("bundle compile", flag.ContinueOnError)
+		storeDir := fs.String("store-dir", defaultStoreDir, "Store directory")
+		cas := fs.String("ca", "", "Comma-separated store CA names")
+		inputs := fs.String("input", "", "Comma-separated PEM/.p7b files to merge")
+		format := fs.String("format", "pem", "pem, p7b, or p12")
+		pw := fs.String("password", "", "p12 password (default changeit; or MGTLS_TRUSTSTORE_PASSWORD)")
+		out := fs.String("out", "", "Output path (required for binary formats unless base64 on stdout is fine)")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		s, err := store.New(*storeDir)
+		if err != nil {
+			return err
+		}
+		if *pw == "" {
+			*pw = os.Getenv("MGTLS_TRUSTSTORE_PASSWORD")
+		}
+		res, err := pki.CompileTrustBundle(s, pki.BundleCompileRequest{CANames: splitCSV(*cas), Inputs: splitCSV(*inputs), Format: *format, Password: *pw, OutPath: *out})
+		if err != nil {
+			return err
+		}
+		return writeJSON(stdout, res)
+	}
 	if len(args) == 0 || args[0] != "export" {
-		return errors.New("bundle subcommand required: export")
+		return errors.New("bundle subcommand required: export or compile")
 	}
 	fs := flag.NewFlagSet("bundle export", flag.ContinueOnError)
 	storeDir := fs.String("store-dir", defaultStoreDir, "Store directory")
@@ -1600,4 +1627,50 @@ func runAudit(defaultStoreDir string, args []string, stdout io.Writer) error {
 	default:
 		return fmt.Errorf("unknown audit subcommand %q (expected list or verify)", sub)
 	}
+}
+
+func runScan(defaultStoreDir string, args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("scan", flag.ContinueOnError)
+	storeDir := fs.String("store-dir", defaultStoreDir, "Store directory")
+	targets := fs.String("targets", "", "Comma-separated host:port targets")
+	file := fs.String("targets-file", "", "File with one host:port per line ('#' comments)")
+	req := pki.ScanRequest{}
+	fs.StringVar(&req.CAName, "ca", "", "Store CA name to verify against")
+	fs.StringVar(&req.CACertPath, "ca-cert", "", "CA PEM path to verify against")
+	fs.StringVar(&req.ClientCertName, "client-cert-name", "", "Store cert for mTLS")
+	fs.IntVar(&req.Concurrency, "concurrency", 16, "Parallel probes (max 256)")
+	fs.IntVar(&req.WarnDays, "warn-days", 30, "Flag leaf certs expiring sooner")
+	timeout := fs.Duration("timeout", 5*time.Second, "Per-target timeout")
+	strict := fs.Bool("strict", false, "Exit non-zero on unreachable, unverified, expiring, or legacy-TLS targets")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	req.Targets = splitCSV(*targets)
+	if *file != "" {
+		raw, err := os.ReadFile(*file)
+		if err != nil {
+			return err
+		}
+		for _, l := range strings.Split(string(raw), "\n") {
+			if l, _, _ = strings.Cut(l, "#"); strings.TrimSpace(l) != "" {
+				req.Targets = append(req.Targets, strings.TrimSpace(l))
+			}
+		}
+	}
+	req.Timeout = *timeout
+	s, err := store.New(*storeDir)
+	if err != nil {
+		return err
+	}
+	rep, err := pki.ScanTargets(s, req)
+	if err != nil {
+		return err
+	}
+	if err := writeJSON(stdout, rep); err != nil {
+		return err
+	}
+	if sm := rep.Summary; *strict && (sm.Unreachable+sm.Expiring+sm.Legacy > 0 || sm.Verified != sm.Reachable) {
+		return fmt.Errorf("scan strict check failed: %d unreachable, %d unverified, %d expiring, %d legacy", sm.Unreachable, sm.Reachable-sm.Verified, sm.Expiring, sm.Legacy)
+	}
+	return nil
 }

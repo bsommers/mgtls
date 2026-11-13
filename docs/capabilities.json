@@ -156,9 +156,9 @@
     {
       "id": "CAP-SCAN-001",
       "name": "Trust Bundle Compiler & Multi-Endpoint TLS Scanner",
-      "status": "planned",
-      "target_version": "1.4.0",
-      "package": "src/pkg/pki"
+      "status": "operational",
+      "package": "src/pkg/pki",
+      "since": "1.4.0"
     }
   ]
 }

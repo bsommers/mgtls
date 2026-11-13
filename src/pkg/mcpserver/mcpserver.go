@@ -537,6 +537,27 @@ func (srv *Server) listTools() []mcpTool {
 			},
 		},
 		{
+			Name:        "pki_scan",
+			Description: "Concurrently scan many TLS endpoints (version, cipher, chain trust, expiry inventory) or, with operation=bundle, compile a multi-CA trust bundle (pem, p7b, p12 truststore)",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"operation":        map[string]any{"type": "string", "description": "scan (default) or bundle"},
+					"targets":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "host:port targets (scan)"},
+					"ca_name":          map[string]any{"type": "string", "description": "CA to verify against (scan)"},
+					"ca_cert_path":     map[string]any{"type": "string"},
+					"client_cert_name": map[string]any{"type": "string"},
+					"concurrency":      map[string]any{"type": "integer", "description": "Parallel probes (default 16, max 256)"},
+					"warn_days":        map[string]any{"type": "integer", "description": "Expiry warning threshold (default 30)"},
+					"ca_names":         map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Store CAs to merge (bundle)"},
+					"inputs":           map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "PEM/.p7b files to merge (bundle)"},
+					"format":           map[string]any{"type": "string", "description": "pem, p7b, or p12 (bundle)"},
+					"password":         map[string]any{"type": "string", "description": "p12 password (bundle)"},
+					"out_path":         map[string]any{"type": "string"},
+				},
+			},
+		},
+		{
 			Name:        "pki_audit_verify",
 			Description: "Verify the tamper-evident SHA-256 hash-chained audit ledger (or list entries); optionally pin the head hash to detect tail truncation",
 			InputSchema: map[string]any{
@@ -894,6 +915,26 @@ func (srv *Server) dispatchTool(ctx context.Context, name string, rawArgs json.R
 			return nil, err
 		}
 		return pki.SignCSR(srv.Store, req)
+
+	case "pki_scan":
+		var args struct {
+			Operation string `json:"operation,omitempty"` // scan (default) | bundle
+		}
+		if err := decodeArgs(rawArgs, &args); err != nil {
+			return nil, err
+		}
+		if strings.EqualFold(strings.TrimSpace(args.Operation), "bundle") {
+			var req pki.BundleCompileRequest
+			if err := decodeArgs(rawArgs, &req); err != nil {
+				return nil, err
+			}
+			return pki.CompileTrustBundle(srv.Store, req)
+		}
+		var req pki.ScanRequest
+		if err := decodeArgs(rawArgs, &req); err != nil {
+			return nil, err
+		}
+		return pki.ScanTargets(srv.Store, req)
 
 	case "pki_audit_verify":
 		var args struct {

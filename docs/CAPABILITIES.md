@@ -34,4 +34,4 @@ Machine-readable manifest: [`docs/capabilities.json`](capabilities.json)
 | :--- | :--- | :--- | :--- |
 | `CAP-SPIFFE-001` | **SPIFFE / SPIRE X.509-SVID & Trust Bundle Support** | `v1.4.0` | `operational` |
 | `CAP-AUDIT-001` | **Tamper-Evident Cryptographic Audit Log (Hash-Chained Ledger)** | `v1.4.0` | `operational` |
-| `CAP-SCAN-001` | **Trust Bundle Compiler & Multi-Endpoint TLS Scanner** | `v1.4.0` | `planned` |
+| `CAP-SCAN-001` | **Trust Bundle Compiler & Multi-Endpoint TLS Scanner** | `v1.4.0` | `operational` |
