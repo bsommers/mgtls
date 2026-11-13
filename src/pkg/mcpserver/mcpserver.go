@@ -537,6 +537,28 @@ func (srv *Server) listTools() []mcpTool {
 			},
 		},
 		{
+			Name:        "pki_svid_issue",
+			Description: "SPIFFE X.509-SVID operations: issue (spiffe:// URI SAN leaf), verify (chain, SPIFFE ID, revocation), or bundle (export CA trust bundle as SPIFFE JSON or PEM)",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"operation":    map[string]any{"type": "string", "description": "issue (default), verify, or bundle"},
+					"name":         map[string]any{"type": "string", "description": "SVID certificate name (issue)"},
+					"spiffe_id":    map[string]any{"type": "string", "description": "spiffe://<trust-domain>/<workload> (issue)"},
+					"ca_name":      map[string]any{"type": "string", "description": "CA name (default root-ca for issue)"},
+					"algorithm":    map[string]any{"type": "string", "description": "Key algorithm (issue)"},
+					"valid_days":   map[string]any{"type": "integer", "description": "Validity days (issue, default 1)"},
+					"dns_names":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+					"cert_name":    map[string]any{"type": "string", "description": "Store certificate name (verify)"},
+					"cert_path":    map[string]any{"type": "string", "description": "SVID PEM path (verify)"},
+					"bundle_path":  map[string]any{"type": "string", "description": "Trust bundle PEM path (verify)"},
+					"trust_domain": map[string]any{"type": "string", "description": "Expected trust domain (verify)"},
+					"expected_id":  map[string]any{"type": "string", "description": "Expected SPIFFE ID (verify)"},
+					"format":       map[string]any{"type": "string", "description": "spiffe (default) or pem (bundle)"},
+				},
+			},
+		},
+		{
 			Name:        "pki_est_enroll",
 			Description: "Enroll or re-enroll an X.509 certificate (or fetch CA certs) against an RFC 7030 Enrollment over Secure Transport (EST) server (/.well-known/est/simpleenroll, /simplereenroll, /cacerts)",
 			InputSchema: map[string]any{
@@ -860,6 +882,15 @@ func (srv *Server) dispatchTool(ctx context.Context, name string, rawArgs json.R
 		}
 		return pki.SignCSR(srv.Store, req)
 
+	case "pki_svid_issue":
+		var args struct {
+			Operation string `json:"operation,omitempty"` // issue (default), verify, bundle
+		}
+		if err := decodeArgs(rawArgs, &args); err != nil {
+			return nil, err
+		}
+		return srv.svidOp(args.Operation, rawArgs)
+
 	case "pki_est_enroll":
 		var args struct {
 			pki.ESTEnrollRequest
@@ -888,6 +919,32 @@ func (srv *Server) dispatchTool(ctx context.Context, name string, rawArgs json.R
 
 	default:
 		return nil, fmt.Errorf("unknown tool %q", name)
+	}
+}
+
+// svidOp dispatches pki_svid_issue operations (issue, verify, bundle).
+func (srv *Server) svidOp(op string, rawArgs json.RawMessage) (any, error) {
+	switch strings.ToLower(strings.TrimSpace(op)) {
+	case "verify":
+		var req pki.VerifySVIDRequest
+		if err := decodeArgs(rawArgs, &req); err != nil {
+			return nil, err
+		}
+		return pki.VerifySVID(srv.Store, req)
+	case "bundle":
+		var req pki.TrustBundleRequest
+		if err := decodeArgs(rawArgs, &req); err != nil {
+			return nil, err
+		}
+		return pki.ExportTrustBundle(srv.Store, req)
+	case "", "issue":
+		var req pki.SVIDRequest
+		if err := decodeArgs(rawArgs, &req); err != nil {
+			return nil, err
+		}
+		return pki.IssueSVID(srv.Store, req)
+	default:
+		return nil, fmt.Errorf("unknown operation %q (expected issue, verify, or bundle)", op)
 	}
 }
 

@@ -153,6 +153,18 @@ func TestMCPProtocolLifecycleAndTools(t *testing.T) {
 		t.Fatalf("expected root-ca, got %v", caRec["name"])
 	}
 
+	// pki_svid_issue (issue, verify, bundle)
+	svid := callToolJSON(t, srv, "pki_svid_issue", map[string]any{"name": "svid-1", "spiffe_id": "spiffe://mcp.test/w/1", "ca_name": "root-ca"})
+	if rec, _ := svid["record"].(map[string]any); rec["name"] != "svid-1" {
+		t.Fatalf("svid issue: %v", svid)
+	}
+	if v := callToolJSON(t, srv, "pki_svid_issue", map[string]any{"operation": "verify", "cert_name": "svid-1", "ca_name": "root-ca"}); v["valid"] != true {
+		t.Fatalf("svid verify: %v", v)
+	}
+	if b := callToolJSON(t, srv, "pki_svid_issue", map[string]any{"operation": "bundle", "ca_name": "root-ca"}); b["format"] != "spiffe" {
+		t.Fatalf("svid bundle: %v", b)
+	}
+
 	// pki_issue_cert (server + client)
 	srvCertOut := callToolJSON(t, srv, "pki_issue_cert", map[string]any{
 		"name":         "api-server",
@@ -298,7 +310,7 @@ func TestMCPProtocolLifecycleAndTools(t *testing.T) {
 	manifestOut := callToolJSON(t, srv, "store_status", nil)
 	casList, _ := manifestOut["cas"].([]any)
 	certsList, _ := manifestOut["certs"].([]any)
-	if len(casList) != 1 || len(certsList) != 3 {
+	if len(casList) != 1 || len(certsList) != 4 {
 		t.Fatalf("unexpected store inventory counts: CAs=%d, Certs=%d", len(casList), len(certsList))
 	}
 }
@@ -583,6 +595,10 @@ certs:
 		{"pki_csr_sign", map[string]any{}},
 		{"pki_csr_sign", map[string]any{"ca_name": "root-ca", "csr_pem": "not a csr"}},
 		{"pki_est_enroll", map[string]any{}},
+		{"pki_svid_issue", map[string]any{}},
+		{"pki_svid_issue", map[string]any{"operation": "bogus"}},
+		{"pki_svid_issue", map[string]any{"operation": "verify"}},
+		{"pki_svid_issue", map[string]any{"operation": "bundle", "ca_name": "nope"}},
 	} {
 		res := callRPC(t, srv, "tools/call", map[string]any{
 			"name":      tc.name,

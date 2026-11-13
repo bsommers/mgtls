@@ -142,9 +142,9 @@
     {
       "id": "CAP-SPIFFE-001",
       "name": "SPIFFE / SPIRE X.509-SVID & Trust Bundle Support",
-      "status": "planned",
-      "target_version": "1.4.0",
-      "package": "src/pkg/pki"
+      "status": "operational",
+      "package": "src/pkg/pki",
+      "since": "1.4.0"
     },
     {
       "id": "CAP-AUDIT-001",

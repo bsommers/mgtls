@@ -92,6 +92,10 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return runVault(storeDir, rest, stdout)
 	case "est":
 		return runEST(ctx, storeDir, rest, stdout)
+	case "svid":
+		return runSVID(storeDir, rest, stdout)
+	case "bundle":
+		return runBundle(storeDir, rest, stdout)
 	case "mcp":
 		return runMCP(ctx, storeDir, rest, stdin, stdout)
 	default:
@@ -140,6 +144,8 @@ Commands:
   csr <create|sign>          PKCS#10 workflow: create key+CSR locally, sign a CSR with a managed CA (no leaf key held)
   vault <status|seal|unseal|rotate>  Encrypt CA/SSH-CA/ACME-account private keys at rest (MGTLS_KEYFILE / MGTLS_PASSPHRASE)
   est <serve|cacerts|enroll|reenroll>  RFC 7030 Enrollment over Secure Transport (EST) server & client
+  svid <issue|verify>        SPIFFE X.509-SVID issue & verification (spiffe://<trust-domain>/<workload>)
+  bundle export              Export a CA trust bundle (--format spiffe|pem)
   mcp serve                  Run the Model Context Protocol (MCP) JSON-RPC 2.0 server (stdio or HTTP/mTLS)
   guide                      View the full end-to-end onboarding & workflow guide
   version                    Print version
@@ -1444,4 +1450,100 @@ func runEST(ctx context.Context, defaultStoreDir string, args []string, stdout i
 	default:
 		return fmt.Errorf("unknown est subcommand %q (expected serve, cacerts, enroll, or reenroll)", sub)
 	}
+}
+
+func runSVID(defaultStoreDir string, args []string, stdout io.Writer) error {
+	if len(args) == 0 {
+		return errors.New("svid subcommand required: issue or verify")
+	}
+	sub, rest := args[0], args[1:]
+	switch sub {
+	case "issue":
+		fs := flag.NewFlagSet("svid issue", flag.ContinueOnError)
+		storeDir := fs.String("store-dir", defaultStoreDir, "Store directory")
+		name := fs.String("name", "", "Certificate name in the store")
+		id := fs.String("id", "", "SPIFFE ID (spiffe://<trust-domain>/<workload>)")
+		caName := fs.String("ca", "root-ca", "Signing CA name")
+		alg := fs.String("algorithm", "", "Key algorithm (default ed25519)")
+		days := fs.Int("days", 1, "Validity days")
+		dns := fs.String("dns", "", "Optional comma-separated DNS SANs")
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		s, err := store.New(*storeDir)
+		if err != nil {
+			return err
+		}
+		req := pki.SVIDRequest{Name: *name, SPIFFEID: *id, CAName: *caName, Algorithm: *alg, ValidDays: *days}
+		for _, d := range strings.Split(*dns, ",") {
+			if d = strings.TrimSpace(d); d != "" {
+				req.DNSNames = append(req.DNSNames, d)
+			}
+		}
+		res, err := pki.IssueSVID(s, req)
+		if err != nil {
+			return err
+		}
+		return writeJSON(stdout, res)
+	case "verify":
+		fs := flag.NewFlagSet("svid verify", flag.ContinueOnError)
+		storeDir := fs.String("store-dir", defaultStoreDir, "Store directory")
+		req := pki.VerifySVIDRequest{}
+		fs.StringVar(&req.CertName, "name", "", "Store certificate name")
+		fs.StringVar(&req.CertPath, "cert", "", "SVID certificate PEM path")
+		fs.StringVar(&req.CAName, "ca", "", "Store CA name (trust bundle + CRL)")
+		fs.StringVar(&req.BundlePath, "bundle", "", "Trust bundle PEM path")
+		fs.StringVar(&req.TrustDomain, "trust-domain", "", "Expected trust domain")
+		fs.StringVar(&req.ExpectedID, "id", "", "Expected SPIFFE ID")
+		fs.StringVar(&req.CRLPath, "crl", "", "CRL path (default: CA CRL)")
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		s, err := store.New(*storeDir)
+		if err != nil {
+			return err
+		}
+		rep, err := pki.VerifySVID(s, req)
+		if err != nil {
+			return err
+		}
+		if err := writeJSON(stdout, rep); err != nil {
+			return err
+		}
+		if !rep.Valid {
+			return fmt.Errorf("SVID verification failed: %s", strings.Join(rep.Errors, "; "))
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown svid subcommand %q (expected issue or verify)", sub)
+	}
+}
+
+func runBundle(defaultStoreDir string, args []string, stdout io.Writer) error {
+	if len(args) == 0 || args[0] != "export" {
+		return errors.New("bundle subcommand required: export")
+	}
+	fs := flag.NewFlagSet("bundle export", flag.ContinueOnError)
+	storeDir := fs.String("store-dir", defaultStoreDir, "Store directory")
+	req := pki.TrustBundleRequest{}
+	fs.StringVar(&req.CAName, "ca", "root-ca", "CA name")
+	fs.StringVar(&req.Format, "format", "spiffe", "spiffe or pem")
+	fs.StringVar(&req.OutPath, "out", "", "Write bundle to this path instead of stdout")
+	fs.IntVar(&req.RefreshHint, "refresh-hint", 300, "spiffe_refresh_hint seconds")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	s, err := store.New(*storeDir)
+	if err != nil {
+		return err
+	}
+	res, err := pki.ExportTrustBundle(s, req)
+	if err != nil {
+		return err
+	}
+	if req.OutPath != "" {
+		return writeJSON(stdout, map[string]any{"format": res.Format, "certs": res.Certs, "out_path": res.OutPath})
+	}
+	_, err = fmt.Fprintln(stdout, strings.TrimRight(res.Content, "\n"))
+	return err
 }

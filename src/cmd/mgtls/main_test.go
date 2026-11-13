@@ -316,6 +316,28 @@ func TestCLIFlagsHelpVersionAndNegativePaths(t *testing.T) {
 		if out, err := runArgs("--store-dir", storeDir, "doctor"); err != nil && strings.Contains(out, "ext.internal") {
 			t.Fatalf("doctor must accept CSR-signed certs without keys: %s", out)
 		}
+		// SPIFFE SVID + bundle
+		if _, err := runArgs("--store-dir", storeDir, "svid", "issue", "--name", "cli-svid", "--id", "spiffe://cli.test/ns/a/sa/b"); err != nil {
+			t.Fatalf("svid issue: %v", err)
+		}
+		if out, err := runArgs("--store-dir", storeDir, "svid", "verify", "--name", "cli-svid", "--ca", "root-ca", "--trust-domain", "cli.test"); err != nil || !strings.Contains(out, `"valid": true`) {
+			t.Fatalf("svid verify: err=%v out=%s", err, out)
+		}
+		if _, err := runArgs("--store-dir", storeDir, "svid", "verify", "--name", "cli-svid", "--ca", "root-ca", "--trust-domain", "other"); err == nil {
+			t.Fatal("svid verify must fail on trust-domain mismatch")
+		}
+		if out, err := runArgs("--store-dir", storeDir, "bundle", "export", "--ca", "root-ca"); err != nil || !strings.Contains(out, "spiffe_sequence") {
+			t.Fatalf("bundle export: err=%v out=%s", err, out)
+		}
+		bpath := filepath.Join(t.TempDir(), "b.pem")
+		if _, err := runArgs("--store-dir", storeDir, "bundle", "export", "--ca", "root-ca", "--format", "pem", "--out", bpath); err != nil {
+			t.Fatalf("bundle export pem: %v", err)
+		}
+		for _, bad := range [][]string{{"svid"}, {"svid", "nope"}, {"svid", "issue"}, {"bundle"}, {"bundle", "export", "--format", "x"}} {
+			if _, err := runArgs(append([]string{"--store-dir", storeDir}, bad...)...); err == nil {
+				t.Fatalf("expected error for %v", bad)
+			}
+		}
 		t.Setenv("MGTLS_PASSPHRASE", "cli-pass")
 		t.Setenv("MGTLS_NEW_PASSPHRASE", "cli-pass-2")
 		for _, sub := range []string{"status", "seal", "rotate", "unseal"} {
