@@ -5,6 +5,17 @@ All notable changes to `mgtls` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-11-13
+
+### Added
+- **RFC 7030 EST server & client (`CAP-EST-001`)**: `mgtls est serve|cacerts|enroll|reenroll`, PKCS#7 `certs-only`, token + mTLS auth; MCP `pki_est_enroll`.
+- **SPIFFE X.509-SVID & trust bundles (`CAP-SPIFFE-001`)**: `mgtls svid issue|verify`, `mgtls bundle export --format spiffe|pem`; MCP `pki_svid_issue`.
+- **Tamper-evident audit ledger (`CAP-AUDIT-001`)**: SHA-256 hash-chained `<store>/audit.jsonl` (CA/cert/CSR/EST/revoke/vault events); `mgtls audit list|verify [--expect-head]`; MCP `pki_audit_verify`. Single-writer; pin head hash to detect tail truncation.
+- **Trust bundle compiler & TLS scanner (`CAP-SCAN-001`)**: `mgtls bundle compile` (pem/p7b/p12 truststore), `mgtls scan --targets|--targets-file [--strict]`; MCP `pki_scan` (25 MCP tools total).
+
+### Verification Telemetry
+- `go vet ./...` clean; `go test -count=1 -race ./src/...` 9/9 packages passing.
+
 ## [1.3.0] - 2026-11-08
 
 ### Added

@@ -4,7 +4,7 @@
 
 <br />
 
-[![Release](https://img.shields.io/github/v/release/bsommers/mgtls?style=flat-square&color=10b981)](https://github.com/bsommers/mgtls/releases/tag/v1.3.0)
+[![Release](https://img.shields.io/github/v/release/bsommers/mgtls?style=flat-square&color=10b981)](https://github.com/bsommers/mgtls/releases/tag/v1.4.0)
 [![Go Version](https://img.shields.io/badge/Go-1.26-00ADD8?style=flat-square&logo=go)](https://go.dev/)
 [![CGO_ENABLED=0](https://img.shields.io/badge/CGO__ENABLED-0-06b6d4?style=flat-square)](https://github.com/bsommers/mgtls)
 [![MCP Protocol](https://img.shields.io/badge/MCP-2024--11--05%20%7C%2021%20Tools-a855f7?style=flat-square)](https://bsommers.github.io/mgtls/#mcp)
@@ -296,7 +296,7 @@ mgtls ssh config-bundle --name corp-ssh-fleet \
 | **Capabilities Manifest** | [`docs/CAPABILITIES.md`](docs/CAPABILITIES.md) | Machine-verifiable capabilities registry (`docs/capabilities.json`) and roadmap |
 | **Test Coverage & Suite Report** | [`docs/TEST_COVERAGE.md`](docs/TEST_COVERAGE.md) | Instrumented coverage report (`83.2%`), P0/P1/P2 gap remediation, E2E example/cookbook matrix, and Shell Test-Quality Checklist |
 | **5-Axis Code Review & Audit** | [`docs/CODE_REVIEW.md`](docs/CODE_REVIEW.md) | Multi-axis code review (Correctness, Readability, Architecture, Security, Performance), severity-labeled findings, and security hardening verification |
-| **Forward Roadmap (`v1.3.0+`)** | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Completed `v1.2.0` & `v1.3.0` capability milestones (OCSP responder/verifier, TLS/mTLS prober, PKCS#10 CSR signing, encrypted key vault) and upcoming roadmap |
+| **Forward Roadmap (`v1.4.0+`)** | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Completed `v1.2.0` & `v1.4.0` capability milestones (OCSP responder/verifier, TLS/mTLS prober, PKCS#10 CSR signing, encrypted key vault) and upcoming roadmap |
 | **Changelog** | [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | Release history and verification telemetry |
 
 ---
