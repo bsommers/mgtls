@@ -92,6 +92,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return runVault(storeDir, rest, stdout)
 	case "est":
 		return runEST(ctx, storeDir, rest, stdout)
+	case "audit":
+		return runAudit(storeDir, rest, stdout)
 	case "svid":
 		return runSVID(storeDir, rest, stdout)
 	case "bundle":
@@ -144,6 +146,7 @@ Commands:
   csr <create|sign>          PKCS#10 workflow: create key+CSR locally, sign a CSR with a managed CA (no leaf key held)
   vault <status|seal|unseal|rotate>  Encrypt CA/SSH-CA/ACME-account private keys at rest (MGTLS_KEYFILE / MGTLS_PASSPHRASE)
   est <serve|cacerts|enroll|reenroll>  RFC 7030 Enrollment over Secure Transport (EST) server & client
+  audit <list|verify>        Tamper-evident hash-chained audit ledger (<store>/audit.jsonl)
   svid <issue|verify>        SPIFFE X.509-SVID issue & verification (spiffe://<trust-domain>/<workload>)
   bundle export              Export a CA trust bundle (--format spiffe|pem)
   mcp serve                  Run the Model Context Protocol (MCP) JSON-RPC 2.0 server (stdio or HTTP/mTLS)
@@ -1546,4 +1549,55 @@ func runBundle(defaultStoreDir string, args []string, stdout io.Writer) error {
 	}
 	_, err = fmt.Fprintln(stdout, strings.TrimRight(res.Content, "\n"))
 	return err
+}
+
+func runAudit(defaultStoreDir string, args []string, stdout io.Writer) error {
+	if len(args) == 0 {
+		return errors.New("audit subcommand required: list or verify")
+	}
+	sub, rest := args[0], args[1:]
+	fs := flag.NewFlagSet("audit "+sub, flag.ContinueOnError)
+	storeDir := fs.String("store-dir", defaultStoreDir, "Store directory")
+	switch sub {
+	case "list":
+		event := fs.String("event", "", "Filter by event (e.g. cert.issue)")
+		last := fs.Int("last", 0, "Only the last N entries")
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		s, err := store.New(*storeDir)
+		if err != nil {
+			return err
+		}
+		entries, err := s.ListAudit(*event, *last)
+		if err != nil {
+			return err
+		}
+		if entries == nil {
+			entries = []store.AuditEntry{}
+		}
+		return writeJSON(stdout, entries)
+	case "verify":
+		head := fs.String("expect-head", "", "Pinned head hash (detects tail truncation)")
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		s, err := store.New(*storeDir)
+		if err != nil {
+			return err
+		}
+		rep, err := s.VerifyAudit(*head)
+		if err != nil {
+			return err
+		}
+		if err := writeJSON(stdout, rep); err != nil {
+			return err
+		}
+		if !rep.Valid {
+			return fmt.Errorf("audit ledger verification failed at seq %d: %s", rep.BrokenSeq, rep.Error)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown audit subcommand %q (expected list or verify)", sub)
+	}
 }

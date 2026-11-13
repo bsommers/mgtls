@@ -149,9 +149,9 @@
     {
       "id": "CAP-AUDIT-001",
       "name": "Tamper-Evident Cryptographic Audit Log (Hash-Chained Ledger)",
-      "status": "planned",
-      "target_version": "1.4.0",
-      "package": "src/pkg/store"
+      "status": "operational",
+      "package": "src/pkg/store",
+      "since": "1.4.0"
     },
     {
       "id": "CAP-SCAN-001",

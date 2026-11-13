@@ -381,6 +381,7 @@ func SignCSR(s *store.Store, req SignCSRRequest) (*SignCSRResult, error) {
 	if err := s.UpsertCert(rec); err != nil {
 		return nil, err
 	}
+	_ = s.Audit(store.AuditCSRSign, rec.Name, map[string]string{"ca": rec.CAName, "serial": rec.SerialHex, "common_name": rec.CommonName, "fingerprint": rec.Fingerprint})
 	return &SignCSRResult{Record: rec, CertPEM: string(certPEM), ChainPEM: string(fullChain)}, nil
 }
 

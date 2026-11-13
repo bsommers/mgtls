@@ -316,6 +316,21 @@ func TestCLIFlagsHelpVersionAndNegativePaths(t *testing.T) {
 		if out, err := runArgs("--store-dir", storeDir, "doctor"); err != nil && strings.Contains(out, "ext.internal") {
 			t.Fatalf("doctor must accept CSR-signed certs without keys: %s", out)
 		}
+		// Audit ledger
+		if out, err := runArgs("--store-dir", storeDir, "audit", "verify"); err != nil || !strings.Contains(out, `"valid": true`) {
+			t.Fatalf("audit verify: err=%v out=%s", err, out)
+		}
+		if out, err := runArgs("--store-dir", storeDir, "audit", "list", "--event", "csr.sign", "--last", "1"); err != nil || !strings.Contains(out, "csr.sign") {
+			t.Fatalf("audit list: err=%v out=%s", err, out)
+		}
+		if _, err := runArgs("--store-dir", storeDir, "audit", "verify", "--expect-head", "deadbeef"); err == nil {
+			t.Fatal("audit verify must fail on head mismatch")
+		}
+		for _, bad := range [][]string{{"audit"}, {"audit", "nope"}} {
+			if _, err := runArgs(append([]string{"--store-dir", storeDir}, bad...)...); err == nil {
+				t.Fatalf("expected error for %v", bad)
+			}
+		}
 		// SPIFFE SVID + bundle
 		if _, err := runArgs("--store-dir", storeDir, "svid", "issue", "--name", "cli-svid", "--id", "spiffe://cli.test/ns/a/sa/b"); err != nil {
 			t.Fatalf("svid issue: %v", err)

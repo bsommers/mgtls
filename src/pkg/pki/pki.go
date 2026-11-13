@@ -457,6 +457,7 @@ func CreateCA(s *store.Store, req CARequest) (*CAResult, error) {
 	if err := s.UpsertCA(rec); err != nil {
 		return nil, err
 	}
+	_ = s.Audit(store.AuditCACreate, rec.Name, map[string]string{"common_name": rec.CommonName, "serial": rec.SerialHex, "parent_ca": rec.ParentCA, "fingerprint": rec.Fingerprint})
 
 	return &CAResult{Record: rec}, nil
 }
@@ -717,6 +718,7 @@ func IssueCert(s *store.Store, req CertRequest) (*CertResult, error) {
 	if err := s.UpsertCert(rec); err != nil {
 		return nil, err
 	}
+	_ = s.Audit(store.AuditCertIssue, rec.Name, map[string]string{"ca": rec.CAName, "serial": rec.SerialHex, "role": rec.Role, "fingerprint": rec.Fingerprint})
 	return &CertResult{Record: rec}, nil
 }
 
@@ -829,6 +831,7 @@ func IssueSelfSigned(s *store.Store, req SelfSignedRequest) (*CertResult, error)
 	if err := s.UpsertCert(rec); err != nil {
 		return nil, err
 	}
+	_ = s.Audit(store.AuditCertSelf, rec.Name, map[string]string{"serial": rec.SerialHex, "fingerprint": rec.Fingerprint})
 	return &CertResult{Record: rec}, nil
 }
 
@@ -1104,6 +1107,7 @@ func RevokeCert(s *store.Store, caName, certName string, reasonCode int) (string
 	if err := s.UpsertCA(*caRec); err != nil {
 		return "", err
 	}
+	_ = s.Audit(store.AuditCertRevoke, certName, map[string]string{"ca": caName, "serial": certRec.SerialHex, "reason": fmt.Sprint(reasonCode)})
 
 	return crlPath, nil
 }

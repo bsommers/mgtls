@@ -537,6 +537,19 @@ func (srv *Server) listTools() []mcpTool {
 			},
 		},
 		{
+			Name:        "pki_audit_verify",
+			Description: "Verify the tamper-evident SHA-256 hash-chained audit ledger (or list entries); optionally pin the head hash to detect tail truncation",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"expect_head": map[string]any{"type": "string", "description": "Pinned head hash"},
+					"list":        map[string]any{"type": "boolean", "description": "List entries instead of verifying"},
+					"event":       map[string]any{"type": "string", "description": "Filter by event when listing"},
+					"last":        map[string]any{"type": "integer", "description": "Only last N entries when listing"},
+				},
+			},
+		},
+		{
 			Name:        "pki_svid_issue",
 			Description: "SPIFFE X.509-SVID operations: issue (spiffe:// URI SAN leaf), verify (chain, SPIFFE ID, revocation), or bundle (export CA trust bundle as SPIFFE JSON or PEM)",
 			InputSchema: map[string]any{
@@ -881,6 +894,21 @@ func (srv *Server) dispatchTool(ctx context.Context, name string, rawArgs json.R
 			return nil, err
 		}
 		return pki.SignCSR(srv.Store, req)
+
+	case "pki_audit_verify":
+		var args struct {
+			ExpectHead string `json:"expect_head,omitempty"`
+			List       bool   `json:"list,omitempty"`
+			Event      string `json:"event,omitempty"`
+			Last       int    `json:"last,omitempty"`
+		}
+		if err := decodeArgs(rawArgs, &args); err != nil {
+			return nil, err
+		}
+		if args.List {
+			return srv.Store.ListAudit(args.Event, args.Last)
+		}
+		return srv.Store.VerifyAudit(args.ExpectHead)
 
 	case "pki_svid_issue":
 		var args struct {

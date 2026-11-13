@@ -165,6 +165,14 @@ func TestMCPProtocolLifecycleAndTools(t *testing.T) {
 		t.Fatalf("svid bundle: %v", b)
 	}
 
+	// pki_audit_verify
+	if a := callToolJSON(t, srv, "pki_audit_verify", nil); a["valid"] != true || a["entries"].(float64) < 2 {
+		t.Fatalf("audit verify: %v", a)
+	}
+	if a := callToolJSON(t, srv, "pki_audit_verify", map[string]any{"expect_head": "deadbeef"}); a["valid"] != false {
+		t.Fatalf("audit pin mismatch must be invalid: %v", a)
+	}
+
 	// pki_issue_cert (server + client)
 	srvCertOut := callToolJSON(t, srv, "pki_issue_cert", map[string]any{
 		"name":         "api-server",

@@ -358,6 +358,7 @@ func handleESTEnroll(
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
 		return
 	}
+	_ = s.Audit(store.AuditESTEnroll, res.Record.Name, map[string]string{"ca": caName, "serial": res.Record.SerialHex, "remote": r.RemoteAddr, "path": r.URL.Path})
 
 	if strings.Contains(r.Header.Get("Accept"), "application/x-pem-file") {
 		w.Header().Set("Content-Type", "application/x-pem-file")

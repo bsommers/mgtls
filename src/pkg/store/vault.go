@@ -406,6 +406,14 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 
 // SealAll encrypts every plaintext tracked secret key with the environment credential.
 func (s *Store) SealAll() (*VaultReport, error) {
+	rep, err := s.SealAll_()
+	if err == nil {
+		_ = s.Audit(AuditVaultSeal, "vault", map[string]string{"changed": fmt.Sprint(rep.Changed)})
+	}
+	return rep, err
+}
+
+func (s *Store) SealAll_() (*VaultReport, error) {
 	cred := CredentialFromEnv()
 	if cred.Empty() {
 		return nil, fmt.Errorf("no vault credential: set %s or %s", EnvKeyFile, EnvPassphrase)
@@ -420,6 +428,14 @@ func (s *Store) SealAll() (*VaultReport, error) {
 
 // UnsealAll decrypts every sealed tracked secret key back to plaintext using the environment credential.
 func (s *Store) UnsealAll() (*VaultReport, error) {
+	rep, err := s.UnsealAll_()
+	if err == nil {
+		_ = s.Audit(AuditVaultUnseal, "vault", map[string]string{"changed": fmt.Sprint(rep.Changed)})
+	}
+	return rep, err
+}
+
+func (s *Store) UnsealAll_() (*VaultReport, error) {
 	cred := CredentialFromEnv()
 	return s.transformSecrets(func(raw []byte) ([]byte, error) {
 		if !IsSealed(raw) {
@@ -432,6 +448,14 @@ func (s *Store) UnsealAll() (*VaultReport, error) {
 // RotateAll re-encrypts every tracked secret key from the current credential to the
 // MGTLS_NEW_* credential. Plaintext keys are sealed with the new credential.
 func (s *Store) RotateAll() (*VaultReport, error) {
+	rep, err := s.RotateAll_()
+	if err == nil {
+		_ = s.Audit(AuditVaultRotate, "vault", map[string]string{"changed": fmt.Sprint(rep.Changed)})
+	}
+	return rep, err
+}
+
+func (s *Store) RotateAll_() (*VaultReport, error) {
 	oldCred, newCred := CredentialFromEnv(), NewCredentialFromEnv()
 	if newCred.Empty() {
 		return nil, fmt.Errorf("no new credential: set %s or %s", EnvNewKeyFile, EnvNewPassphrase)
