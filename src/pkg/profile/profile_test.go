@@ -732,7 +732,7 @@ targets:
 	}
 
 	// 2. Store-only renewal mode (spec == nil)
-	storeRep, err := RunRenewalCycle(ctx, s, nil, 72*time.Hour, "")
+	storeRep, err := RunRenewalCycle(ctx, s, nil, 72*time.Hour, "", false)
 	if err != nil {
 		t.Fatalf("RunRenewalCycle(spec=nil): %v", err)
 	}
@@ -757,9 +757,6 @@ targets:
 		t.Fatalf("missing timer file: %v", err)
 	}
 }
-
-
-
 func TestRenewalCycleSkipsExternalCSRCerts(t *testing.T) {
 	s, _ := store.New(t.TempDir())
 	if err := s.Init(); err != nil {
@@ -775,7 +772,7 @@ func TestRenewalCycleSkipsExternalCSRCerts(t *testing.T) {
 	if _, err := pki.SignCSR(s, pki.SignCSRRequest{CAName: "ca", CSRPEM: c.CSRPEM, ValidDays: 1}); err != nil {
 		t.Fatal(err)
 	}
-	rep, err := RunRenewalCycle(context.Background(), s, nil, 72*time.Hour, "")
+	rep, err := RunRenewalCycle(context.Background(), s, nil, 72*time.Hour, "", false)
 	if err != nil {
 		t.Fatalf("renewal must not fail on key-less CSR certs: %v", err)
 	}

@@ -242,4 +242,3 @@ func TestGenerateDefaultsAndTLSOnlyMode(t *testing.T) {
 		}
 	}
 }
-

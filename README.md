@@ -104,7 +104,7 @@ Legend:  ████ 100% (Full Native)   ▓▓░░ 50% (Partial / Plugin / 
 `mgtls` is a zero-CGO (`CGO_ENABLED=0`), single-binary Go 1.26 cryptographic authority, certificate lifecycle engine, and **Model Context Protocol (MCP)** server (`mgtls mcp serve`) built for developers, platform engineers, and autonomous AI agents. It unifies local multi-tier X.509 PKI, mutual TLS (mTLS), OpenSSH User & Host Certificate Authorities, free public RFC 8555 ACME v2 encryption, and drop-in configuration generation across 14 target platforms (`FastAPI`, `Spring Boot 3`, `MCP Server`, `NGINX`, `Vite`, `Proxmox VE`, `OpenSSH`, `Caddy`, `Traefik`, `Envoy`, `PostgreSQL`, `Redis`, `gRPC-Go`, and `Node.js/Express`):
 
 - **Multi-Tier X.509 PKI & Mutual TLS (mTLS)**: Root CAs, Intermediate CA chains (`fullchain.pem`, `ca-chain.pem`), standalone self-signed certificates, Server/Client/Dual-mTLS leaf certificates, PKCS#12 (`.p12`) & DER bundles, X.509 v2 CRLs, and OS trust store installers.
-- **OpenSSH Certificate Authorities**: Dedicated OpenSSH User CAs (`SSH_CERT_TYPE_USER`) and Host CAs (`SSH_CERT_TYPE_HOST`), Ed25519/ECDSA/RSA keypair generation, principal/validity/extension signing (`*-cert.pub`), certificate inspection, and automated `sshd_config`, `ssh_config`, `authorized_principals`, and `@cert-authority` `known_hosts` bundles.
+- **OpenSSH Certificate Authorities**: Dedicated OpenSSH User CAs (`SSH_CERT_TYPE_USER`) and Host CAs (`SSH_CERT_TYPE_HOST`), Ed25519/ECDSA/RSA keypair generation, principal/validity/extension signing (`*-cert.pub`), certificate inspection, and automated `sshd_config`, `ssh_config`, per-account `auth_principals/<account>` (`AuthorizedPrincipalsFile …/%u`), and `@cert-authority` `known_hosts` bundles.
 - **Public Free Encryption via RFC 8555 ACME v2**: Built-in support for **Let's Encrypt** (Production & Staging), **ZeroSSL** (with EAB), **Buypass Go SSL**, **Google Trust Services** (with EAB), and custom ACME v2 directories (`HTTP-01`, `TLS-ALPN-01`, and `DNS-01` challenges), plus an in-memory RFC 8555 mock server for offline testing.
 - **Drop-In Framework & Infrastructure Scaffolding**: Ready-to-run TLS 1.3 and mTLS configurations, server/client code templates, and verification harnesses for **Python FastAPI**, **Spring Boot 3**, **Model Context Protocol (MCP) Servers**, **NGINX**, **Vite**, **Proxmox VE**, and **OpenSSH**.
 - **Declarative Fleet Management & Health Auditing**: Idempotent reconciliation via `mgtls apply -f mgtls.yaml`, inventory reporting (`mgtls status`), and automated key-permission (`0600`) and expiry auditing (`mgtls doctor`).
@@ -223,7 +223,17 @@ Run `mgtls` as an MCP Server over `stdio` (for Claude Desktop, Cursor, Windsurf)
   --tls-cert .mgtls/certs/api-srv/fullchain.pem \
   --tls-key .mgtls/certs/api-srv/key.pem \
   --client-ca .mgtls/certs/api-srv/ca-chain.pem
+
+# Bearer-token transport (loopback, no mTLS): token must be >= 32 chars
+MGTLS_MCP_TOKEN="$(openssl rand -hex 32)" ./bin/mgtls --store-dir .mgtls mcp serve --transport http
 ```
+
+The HTTP transport **refuses to start without authentication**: pass `--client-ca` (mTLS) or set
+`MGTLS_MCP_TOKEN` / `--token-file` (clients send `Authorization: Bearer <token>`). Plaintext HTTP is only
+allowed on loopback, and `--insecure-no-auth` is honoured only on loopback. Requests carrying an `Origin`
+header or a non-`application/json` body are rejected (blocks browser drive-by / DNS-rebinding).
+`acme_obtain` arguments `dns_exec_hook` and `skip_verify_tls` are disabled over MCP unless the server is
+started with `--allow-exec-hooks`.
 
 ---
 
@@ -269,11 +279,12 @@ mgtls ssh sign --name alice-ssh --ca corp-ssh-user-ca --type user \
 mgtls ssh sign --name bastion-host-ssh --ca corp-ssh-host-ca --type host \
   --key-id "bastion.corp.internal" --principals "bastion.corp.internal,10.0.0.10" --hours 8760
 
-# 4. Generate complete sshd_config, ssh_config, authorized_principals & @cert-authority known_hosts
+# 4. Generate sshd_config, ssh_config, per-account auth_principals/ & @cert-authority known_hosts
+#    --account ACCOUNT=PRINCIPALS controls which principals may log in as each local account
 mgtls ssh config-bundle --name corp-ssh-fleet \
   --user-ca corp-ssh-user-ca --host-ca corp-ssh-host-ca \
   --user-cert alice-ssh --host-cert bastion-host-ssh \
-  --hosts "*.corp.internal,10.0.0.*" --principals "alice,admin,sre" \
+  --hosts "*.corp.internal,10.0.0.*" --account alice=alice --account sre=alice \
   --out ./openssh-fleet-bundle
 ```
 
@@ -328,4 +339,4 @@ mgtls ssh config-bundle --name corp-ssh-fleet \
 | [`examples/nginx-mtls/`](examples/nginx-mtls) | [`README.md`](examples/nginx-mtls/README.md), [`nginx.conf`](examples/nginx-mtls/nginx.conf), [`setup_nginx_mtls.sh`](examples/nginx-mtls/setup_nginx_mtls.sh) | NGINX TLS 1.3 reverse proxy with `ssl_verify_client on` and `$ssl_client_s_dn` identity headers |
 | [`examples/vite-mtls/`](examples/vite-mtls) | [`README.md`](examples/vite-mtls/README.md), [`vite.config.ts`](examples/vite-mtls/vite.config.ts), [`setup_vite_mtls.sh`](examples/vite-mtls/setup_vite_mtls.sh) | Vite HTTPS + mTLS dev/preview server with `node:tls` peer certificate inspection middleware |
 | [`examples/proxmox-tls/`](examples/proxmox-tls) | [`README.md`](examples/proxmox-tls/README.md), [`setup_proxmox_tls.sh`](examples/proxmox-tls/setup_proxmox_tls.sh) | Proxmox VE node certificate deployment (`/etc/pve/local/pveproxy-ssl.pem` / `pvenode cert set`) & Let's Encrypt ACME automation |
-| [`examples/openssh-ca/`](examples/openssh-ca) | [`README.md`](examples/openssh-ca/README.md), [`setup_openssh_ca.sh`](examples/openssh-ca/setup_openssh_ca.sh) | End-to-end OpenSSH User CA & Host CA provisioning, key signing, `sshd_config`, `authorized_principals`, and `@cert-authority` `known_hosts` |
+| [`examples/openssh-ca/`](examples/openssh-ca) | [`README.md`](examples/openssh-ca/README.md), [`setup_openssh_ca.sh`](examples/openssh-ca/setup_openssh_ca.sh) | End-to-end OpenSSH User CA & Host CA provisioning, key signing, `sshd_config`, per-account `auth_principals/`, and `@cert-authority` `known_hosts` |

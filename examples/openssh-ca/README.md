@@ -9,7 +9,7 @@ This example demonstrates how to eliminate static `authorized_keys` sprawl and T
 
 | File | Description |
 | :--- | :--- |
-| [`setup_openssh_ca.sh`](file:///home/bill/src/sysadmin/mgtls/examples/openssh-ca/setup_openssh_ca.sh) | End-to-end script that creates the OpenSSH User CA and Host CA, signs user and host certificates, inspects the resulting `-cert.pub` artifacts, and generates `sshd_config`, `ssh_config`, `authorized_principals`, and `@cert-authority` `known_hosts` bundles. |
+| [`setup_openssh_ca.sh`](file:///home/bill/src/sysadmin/mgtls/examples/openssh-ca/setup_openssh_ca.sh) | End-to-end script that creates the OpenSSH User CA and Host CA, signs user and host certificates, inspects the resulting `-cert.pub` artifacts, and generates `sshd_config`, `ssh_config`, per-account `auth_principals/`, and `@cert-authority` `known_hosts` bundles. |
 
 ## Quickstart
 
@@ -30,7 +30,10 @@ mgtls --store-dir .mgtls-openssh ssh inspect \
 
 ```bash
 sudo cp generated-openssh-config/sshd_config.d/mgtls-ca.conf /etc/ssh/sshd_config.d/mgtls-ca.conf
-sudo cp generated-openssh-config/authorized_principals /etc/ssh/authorized_principals
+sudo install -d -m 0755 /etc/ssh/auth_principals
+sudo cp generated-openssh-config/auth_principals/* /etc/ssh/auth_principals/
+# The drop-in references <out>/auth_principals/%u; point it at the installed copy:
+sudo sed -i 's#^AuthorizedPrincipalsFile .*#AuthorizedPrincipalsFile /etc/ssh/auth_principals/%u#' /etc/ssh/sshd_config.d/mgtls-ca.conf
 sudo systemctl reload sshd
 ```
 

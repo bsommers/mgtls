@@ -285,12 +285,17 @@ func TestSSHCALifecycleAndCertVerification(t *testing.T) {
 		t.Fatalf("unexpected known_hosts content: %s", string(knownHostsBytes))
 	}
 
-	authPrincBytes, err := os.ReadFile(bundle.AuthorizedPrincipals)
-	if err != nil {
-		t.Fatalf("read authorized_principals: %v", err)
+	if !strings.Contains(sshdConf, "AuthorizedPrincipalsFile "+filepath.Join(bundleDir, "auth_principals", "%u")+"\n") {
+		t.Fatalf("sshd_config must use per-account %%u principals file:\n%s", sshdConf)
 	}
-	if string(authPrincBytes) != "alice\nadmin\ndeploy\n" {
-		t.Fatalf("unexpected authorized_principals content: %q", string(authPrincBytes))
+	for _, p := range []string{"alice", "admin", "deploy"} {
+		b, err := os.ReadFile(filepath.Join(bundle.AuthorizedPrincipalsDir, p))
+		if err != nil {
+			t.Fatalf("read auth_principals/%s: %v", p, err)
+		}
+		if string(b) != p+"\n" {
+			t.Fatalf("auth_principals/%s = %q, want only %q", p, b, p)
+		}
 	}
 
 	clientConfBytes, err := os.ReadFile(bundle.SSHClientConfigPath)
@@ -330,7 +335,11 @@ func TestSSHCALifecycleAndCertVerification(t *testing.T) {
 		t.Fatalf("expected error when inspecting plain public key as SSH certificate")
 	}
 	// GenerateSSHConfigBundle with default OutputDir
-	if _, err := GenerateSSHConfigBundle(st, SSHConfigRequest{Name: "default-dir-bundle", UserCAName: "prod-user-ca"}); err != nil {
+	// Trusting a user CA without explicit principals must be refused (no silent root/admin default).
+	if _, err := GenerateSSHConfigBundle(st, SSHConfigRequest{Name: "no-principals", UserCAName: "prod-user-ca"}); err == nil {
+		t.Fatalf("expected error when trusting a user CA without principals")
+	}
+	if _, err := GenerateSSHConfigBundle(st, SSHConfigRequest{Name: "default-dir-bundle", UserCAName: "prod-user-ca", Principals: []string{"ops"}}); err != nil {
 		t.Fatalf("GenerateSSHConfigBundle default dir: %v", err)
 	}
 

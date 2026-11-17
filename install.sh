@@ -4,7 +4,7 @@ set -euo pipefail
 
 TOOL_NAME="mgtls"
 GITHUB_REPO="bsommers/mgtls"
-VERSION="${MGTLS_VERSION:-v1.1.1}"
+VERSION="${MGTLS_VERSION:-v1.2.0}"
 
 SCOPE="local"
 CUSTOM_PREFIX="${PREFIX:-}"
@@ -71,6 +71,10 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --version)
+      if [[ $# -lt 2 ]]; then
+        echo "error: --version requires a tag argument" >&2
+        exit 1
+      fi
       VERSION="$2"
       shift 2
       ;;
@@ -141,7 +145,8 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
   else
     echo "Nothing to uninstall at ${TARGET_BIN}"
   fi
-  if [[ -d "$SHARE_DIR" ]]; then
+  # Only delete the share dir if this installer created it (marker present).
+  if [[ -d "$SHARE_DIR" && ( -f "$MARKER_FILE" || "$FORCE" -eq 1 ) ]]; then
     run_cmd rm -rf "$SHARE_DIR"
     echo "Removed ${SHARE_DIR}"
   fi
@@ -154,7 +159,20 @@ if [[ -e "$TARGET_BIN" && ! -f "$MARKER_FILE" && "$FORCE" -eq 0 ]]; then
   exit 1
 fi
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+  echo "error: invalid --version '${VERSION}' (expected vMAJOR.MINOR.PATCH)" >&2
+  exit 1
+fi
+
+# Only build from local source when this script is a real file on disk. Under
+# `curl ... | bash`, BASH_SOURCE is empty and $0 is "bash", which would otherwise
+# resolve to the current directory and build whatever repository the user is in.
+if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+else
+  SCRIPT_DIR=""
+  FROM_RELEASE=1
+fi
 TMP_BUILD_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_BUILD_DIR"' EXIT
 BUILT_BIN="${TMP_BUILD_DIR}/${TOOL_NAME}"
@@ -209,6 +227,9 @@ else
       grep "  ${ASSET}\$" SHA256SUMS | sha256sum -c -
     elif command -v shasum >/dev/null 2>&1; then
       grep "  ${ASSET}\$" SHA256SUMS | shasum -a 256 -c -
+    else
+      echo "error: neither sha256sum nor shasum is available; refusing to install an unverified binary" >&2
+      exit 1
     fi
   )
   mv "${TMP_BUILD_DIR}/${ASSET}" "$BUILT_BIN"

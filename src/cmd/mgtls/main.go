@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/sysadmin/mgtls/src/pkg/acme"
@@ -23,7 +25,11 @@ import (
 const Version = "1.4.0"
 
 func main() {
-	if err := run(context.Background(), os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil {
+	// Cancel on SIGINT/SIGTERM so `mgtls watch` and `mgtls mcp serve` shut down
+	// between cycles instead of being killed mid-write.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := run(ctx, os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
@@ -130,7 +136,7 @@ Commands:
     sign-user                Sign an OpenSSH User certificate
     sign-host                Sign an OpenSSH Host certificate
     inspect                  Inspect an OpenSSH *-cert.pub certificate
-    config                   Generate sshd_config, ssh_config, known_hosts & authorized_principals
+    config                   Generate sshd_config, ssh_config, known_hosts & per-account auth_principals/
   acme <subcommand>          Manage free public TLS certificates via ACME v2 (Let's Encrypt, ZeroSSL, Buypass, Google)
     providers                List built-in public ACME v2 providers
     obtain                   Obtain a certificate via HTTP-01, TLS-ALPN-01, or DNS-01
@@ -196,6 +202,24 @@ func writeJSON(w io.Writer, v any) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(v)
+}
+
+// accountFlag collects repeatable --account ACCOUNT=P1,P2 values.
+type accountFlag struct{ m map[string][]string }
+
+func (a *accountFlag) String() string { return fmt.Sprint(a.m) }
+
+func (a *accountFlag) Set(v string) error {
+	acct, ps, ok := strings.Cut(v, "=")
+	acct = strings.TrimSpace(acct)
+	if !ok || acct == "" || len(splitCSV(ps)) == 0 {
+		return fmt.Errorf("expected ACCOUNT=PRINCIPAL[,PRINCIPAL...], got %q", v)
+	}
+	if a.m == nil {
+		a.m = map[string][]string{}
+	}
+	a.m[acct] = append(a.m[acct], splitCSV(ps)...)
+	return nil
 }
 
 func splitCSV(s string) []string {
@@ -562,10 +586,10 @@ func runCert(defaultStoreDir string, args []string, stdout io.Writer) error {
 			return err
 		}
 		return writeJSON(stdout, map[string]any{
-			"revoked":   true,
-			"ca":        *caName,
-			"cert":      *certName,
-			"crl_path":  crlPath,
+			"revoked":  true,
+			"ca":       *caName,
+			"cert":     *certName,
+			"crl_path": crlPath,
 		})
 
 	default:
@@ -674,7 +698,9 @@ func runSSH(defaultStoreDir string, args []string, stdout io.Writer) error {
 		userCert := fs.String("user-cert", "", "User certificate name")
 		patterns := fs.String("host-patterns", "*", "Comma-separated known_hosts patterns")
 		hosts := fs.String("hosts", "", "Alias for --host-patterns")
-		principals := fs.String("principals", "root,admin", "Comma-separated authorized principals")
+		principals := fs.String("principals", "", "Comma-separated principals; each may log in only as the same-named account")
+		var accounts accountFlag
+		fs.Var(&accounts, "account", "Repeatable ACCOUNT=PRINCIPAL[,PRINCIPAL...]: principals allowed to log in as ACCOUNT (e.g. --account deploy=alice,ci)")
 		outDir := fs.String("out", "", "Output directory")
 		if err := fs.Parse(rest); err != nil {
 			return err
@@ -688,14 +714,15 @@ func runSSH(defaultStoreDir string, args []string, stdout io.Writer) error {
 			return err
 		}
 		res, err := sshca.GenerateSSHConfigBundle(s, sshca.SSHConfigRequest{
-			Name:         *name,
-			UserCAName:   *userCA,
-			HostCAName:   *hostCA,
-			HostCertName: *hostCert,
-			UserCertName: *userCert,
-			HostPatterns: splitCSV(patStr),
-			Principals:   splitCSV(*principals),
-			OutputDir:    *outDir,
+			Name:              *name,
+			UserCAName:        *userCA,
+			HostCAName:        *hostCA,
+			HostCertName:      *hostCert,
+			UserCertName:      *userCert,
+			HostPatterns:      splitCSV(patStr),
+			Principals:        splitCSV(*principals),
+			AccountPrincipals: accounts.m,
+			OutputDir:         *outDir,
 		})
 		if err != nil {
 			return err
@@ -1009,7 +1036,10 @@ func runMCP(ctx context.Context, defaultStoreDir string, args []string, stdin io
 	addr := fs.String("addr", "127.0.0.1:8443", "Listen address for http/https/mtls transport")
 	tlsCert := fs.String("tls-cert", "", "Optional server TLS certificate PEM for HTTPS/mTLS MCP server")
 	tlsKey := fs.String("tls-key", "", "Optional server TLS private key PEM for HTTPS/mTLS MCP server")
-	clientCA := fs.String("client-ca", "", "Optional client CA bundle PEM to require mTLS on MCP server")
+	clientCA := fs.String("client-ca", "", "Client CA bundle PEM to require mTLS on MCP server")
+	tokenFile := fs.String("token-file", "", "File holding the bearer token required on HTTP requests (default: $MGTLS_MCP_TOKEN)")
+	insecureNoAuth := fs.Bool("insecure-no-auth", false, "Allow an unauthenticated HTTP MCP server (loopback addresses only)")
+	allowExec := fs.Bool("allow-exec-hooks", false, "Allow MCP callers to pass acme_obtain dns_exec_hook / skip_verify_tls")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -1022,6 +1052,19 @@ func runMCP(ctx context.Context, defaultStoreDir string, args []string, stdin io
 		return err
 	}
 	srv := mcpserver.NewServer(s)
+	srv.AllowExecHooks = *allowExec
+	srv.AllowInsecureNoAuth = *insecureNoAuth
+	srv.AuthToken = strings.TrimSpace(os.Getenv("MGTLS_MCP_TOKEN"))
+	if *tokenFile != "" {
+		raw, err := os.ReadFile(*tokenFile)
+		if err != nil {
+			return fmt.Errorf("read --token-file: %w", err)
+		}
+		srv.AuthToken = strings.TrimSpace(string(raw))
+	}
+	if srv.AuthToken != "" && len(srv.AuthToken) < 32 {
+		return errors.New("MCP bearer token must be at least 32 characters (e.g. `openssl rand -hex 32`)")
+	}
 	switch *transport {
 	case "stdio":
 		return srv.ServeStdio(ctx, stdin, stdout)
@@ -1041,6 +1084,7 @@ func runWatch(ctx context.Context, defaultStoreDir string, args []string, stdout
 	renewBefore := fs.Duration("renew-before", 720*time.Hour, "Renew certificates expiring within this duration (default 720h = 30d)")
 	onRenew := fs.String("on-renew", "", "Shell command hook to execute when any certificate is renewed")
 	once := fs.Bool("once", false, "Run a single renewal pass and exit")
+	reissueRevoked := fs.Bool("reissue-revoked", false, "Rotate revoked certificates (reissue with a new key) instead of honoring the revocation")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -1053,13 +1097,16 @@ func runWatch(ctx context.Context, defaultStoreDir string, args []string, stdout
 		return err
 	}
 	return profile.Watch(ctx, s, profile.WatchOptions{
-		ManifestPath: manifestPath,
-		Interval:     *interval,
-		RenewBefore:  *renewBefore,
-		OnRenewHook:  *onRenew,
-		Once:         *once,
+		ManifestPath:   manifestPath,
+		Interval:       *interval,
+		RenewBefore:    *renewBefore,
+		OnRenewHook:    *onRenew,
+		Once:           *once,
+		ReissueRevoked: *reissueRevoked,
 	}, func(rep *profile.RenewalCycleReport) {
-		_ = writeJSON(stdout, rep)
+		if err := writeJSON(stdout, rep); err != nil {
+			fmt.Fprintf(os.Stderr, "watch: write report: %v\n", err)
+		}
 	})
 }
 
@@ -1076,6 +1123,7 @@ func runSystemd(defaultStoreDir string, args []string, stdout io.Writer) error {
 	renewBefore := fs.String("renew-before", "720h", "Renew window duration (e.g. 720h)")
 	onRenew := fs.String("on-renew", "", "Optional reload command hook on renewal")
 	outDir := fs.String("out", "", "Output directory for .service and .timer files")
+	reissueRevoked := fs.Bool("reissue-revoked", false, "Add --reissue-revoked to the unit (rotate revoked certificates)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -1084,14 +1132,15 @@ func runSystemd(defaultStoreDir string, args []string, stdout io.Writer) error {
 		return err
 	}
 	bundle, err := profile.GenerateSystemdUnits(s, profile.SystemdRequest{
-		UnitName:     *unitName,
-		BinaryPath:   *binPath,
-		ManifestPath: *manifestPath,
-		StoreDir:     s.BaseDir,
-		Calendar:     *calendar,
-		RenewBefore:  *renewBefore,
-		OnRenewHook:  *onRenew,
-		OutputDir:    *outDir,
+		UnitName:       *unitName,
+		BinaryPath:     *binPath,
+		ManifestPath:   *manifestPath,
+		StoreDir:       s.BaseDir,
+		Calendar:       *calendar,
+		RenewBefore:    *renewBefore,
+		OnRenewHook:    *onRenew,
+		OutputDir:      *outDir,
+		ReissueRevoked: *reissueRevoked,
 	})
 	if err != nil {
 		return err

@@ -93,9 +93,12 @@ mgtls ssh config \
   --user-ca prod-user-ca \
   --host-ca prod-host-ca \
   --hosts "*.internal,10.10.0.*" \
-  --principals "ubuntu,deploy" \
-  --output-dir ./ssh-fleet-config
+  --account ubuntu=alice \
+  --account deploy=alice,ci \
+  --out ./ssh-fleet-config
 ```
+
+Each `--account ACCOUNT=PRINCIPAL[,PRINCIPAL...]` says which certificate principals may log in as that local account. mgtls writes one file per account, so a certificate for `ci` can log in as `deploy` but not as `ubuntu` or `root`. The shorthand `--principals "alice,bob"` is the same as `--account alice=alice --account bob=bob`: each principal may log in only as the account with its own name. You cannot combine the two forms. Rerunning the command deletes the files of accounts you dropped.
 
 Generated files in `./ssh-fleet-config/`:
 
@@ -104,13 +107,16 @@ Generated files in `./ssh-fleet-config/`:
    TrustedUserCAKeys /etc/ssh/mgtls_user_ca.pub
    HostKey /etc/ssh/ssh_host_ed25519_key
    HostCertificate /etc/ssh/ssh_host_ed25519_key-cert.pub
-   AuthorizedPrincipalsFile /etc/ssh/auth_principals/%u
+   AuthorizedPrincipalsFile <out>/auth_principals/%u
    ```
-2. **`authorized_principals`** (Copy to `/etc/ssh/auth_principals/ubuntu`):
+   sshd expands `%u` to the account being logged into. If you copy the files somewhere else, such as `/etc/ssh/auth_principals/`, edit this line to match.
+2. **`auth_principals/<account>`**, one file per account (copy the directory to `/etc/ssh/auth_principals/`). For the command above:
    ```text
-   ubuntu
-   deploy
+   auth_principals/ubuntu:  alice
+   auth_principals/deploy:  alice
+                            ci
    ```
+   sshd refuses certificate logins to any account without a file.
 3. **`known_hosts`** (Append to client `~/.ssh/known_hosts` or `/etc/ssh/ssh_known_hosts`):
    ```text
    @cert-authority *.internal,10.10.0.* ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... prod-host-ca

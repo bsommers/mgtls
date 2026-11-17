@@ -12,6 +12,9 @@
 2. **HTTP / HTTPS / mTLS (`--http <addr>`)**:
    - Exposes `POST /mcp` (and `/`) accepting `application/json` JSON-RPC 2.0 requests, plus `GET /healthz`.
    - Supports TLS encryption (`--tls-cert`, `--tls-key`) and strict mutual TLS client verification (`--client-ca`) enforcing TLS 1.2+ and `tls.RequireAndVerifyClientCert`.
+   - **Authentication is mandatory**: either mTLS (`--client-ca`) or a bearer token (`MGTLS_MCP_TOKEN` or `--token-file`, >= 32 chars, constant-time compared). `--insecure-no-auth` is accepted only for loopback addresses; plaintext HTTP is refused on non-loopback addresses.
+   - Rejects requests with an `Origin` header (403), a non-`application/json` `Content-Type` (415), or a body over 10 MiB (413).
+   - `acme_obtain.dns_exec_hook` / `skip_verify_tls` require `--allow-exec-hooks`.
 
 ```mermaid
 sequenceDiagram
@@ -240,7 +243,7 @@ Inspects an OpenSSH `-cert.pub` certificate file.
 ```
 
 #### `ssh_config_bundle`
-Generates ready-to-deploy `sshd_config.d/mgtls-ca.conf`, `ssh_config.d/mgtls.conf`, `authorized_principals`, and `@cert-authority` `known_hosts` files.
+Generates ready-to-deploy `sshd_config.d/mgtls-ca.conf`, `ssh_config.d/mgtls.conf`, `@cert-authority` `known_hosts`, and one `auth_principals/<account>` file per account. The sshd drop-in sets `AuthorizedPrincipalsFile <output_dir>/auth_principals/%u`, so each certificate principal may log in only as the accounts mapped to it.
 ```json
 {
   "name": "ssh_config_bundle",
@@ -251,7 +254,8 @@ Generates ready-to-deploy `sshd_config.d/mgtls-ca.conf`, `ssh_config.d/mgtls.con
       "user_ca_name": { "type": "string" },
       "host_ca_name": { "type": "string" },
       "host_pattern": { "type": "string", "default": "*.internal,10.0.0.*" },
-      "principals": { "type": "array", "items": { "type": "string" } },
+      "principals": { "type": "array", "items": { "type": "string" }, "description": "Shorthand: each principal may log in only as the same-named account" },
+      "account_principals": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" } }, "description": "account -> principals, e.g. {\"deploy\": [\"alice\", \"ci\"]}; mutually exclusive with principals" },
       "output_dir": { "type": "string" }
     }
   }

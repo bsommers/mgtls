@@ -2,9 +2,13 @@ package targets
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"text/template"
 	"time"
@@ -224,6 +228,9 @@ func Generate(s *store.Store, req GenerateRequest) (*GenerateResult, error) {
 	if name == "" {
 		name = targetType
 	}
+	if err := store.ValidName("target", name); err != nil {
+		return nil, err
+	}
 	host := strings.TrimSpace(req.Host)
 	if host == "" {
 		host = "localhost"
@@ -244,8 +251,12 @@ func Generate(s *store.Store, req GenerateRequest) (*GenerateResult, error) {
 		outDir = abs
 	}
 
+	if err := validateRenderInputs(host, port, outDir, req); err != nil {
+		return nil, err
+	}
+
 	certsDir := filepath.Join(outDir, "certs")
-	if err := os.MkdirAll(certsDir, 0755); err != nil {
+	if err := os.MkdirAll(certsDir, 0700); err != nil {
 		return nil, fmt.Errorf("create target certs dir: %w", err)
 	}
 
@@ -270,11 +281,23 @@ func Generate(s *store.Store, req GenerateRequest) (*GenerateResult, error) {
 		clientKeyPath = filepath.Join(certsDir, "client.key")
 	}
 
-	localCACert := copyArtifactIfPresent(req.CACertPath, filepath.Join(certsDir, "ca.crt"), 0644, caCertPath)
-	localServerCert := copyArtifactIfPresent(req.ServerCertPath, filepath.Join(certsDir, "server.crt"), 0644, serverCertPath)
-	localServerKey := copyArtifactIfPresent(req.ServerKeyPath, filepath.Join(certsDir, "server.key"), 0600, serverKeyPath)
-	localClientCert := copyArtifactIfPresent(req.ClientCertPath, filepath.Join(certsDir, "client.crt"), 0644, clientCertPath)
-	localClientKey := copyArtifactIfPresent(req.ClientKeyPath, filepath.Join(certsDir, "client.key"), 0600, clientKeyPath)
+	var copyErrs []error
+	cp := func(src, dst string, mode os.FileMode, fallback string) string {
+		out, err := copyArtifactIfPresent(src, dst, mode, fallback)
+		if err != nil {
+			copyErrs = append(copyErrs, err)
+		}
+		return out
+	}
+	localCACert := cp(req.CACertPath, filepath.Join(certsDir, "ca.crt"), 0644, caCertPath)
+	localServerCert := cp(req.ServerCertPath, filepath.Join(certsDir, "server.crt"), 0644, serverCertPath)
+	localServerKey := cp(req.ServerKeyPath, filepath.Join(certsDir, "server.key"), 0600, serverKeyPath)
+	localClientCert := cp(req.ClientCertPath, filepath.Join(certsDir, "client.crt"), 0644, clientCertPath)
+	localClientKey := cp(req.ClientKeyPath, filepath.Join(certsDir, "client.key"), 0600, clientKeyPath)
+	if err := errors.Join(copyErrs...); err != nil {
+		// Previously swallowed: the bundle would reference files that were never written.
+		return nil, err
+	}
 
 	extra := make(map[string]string, len(req.Extra))
 	for k, v := range req.Extra {
@@ -282,6 +305,14 @@ func Generate(s *store.Store, req GenerateRequest) (*GenerateResult, error) {
 	}
 	if extra["upstream_url"] == "" {
 		extra["upstream_url"] = "http://127.0.0.1:8000"
+	}
+	for k, v := range extra {
+		if err := checkConfigValue("extra."+k, v); err != nil {
+			return nil, err
+		}
+	}
+	if u, err := url.Parse(extra["upstream_url"]); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return nil, fmt.Errorf("extra.upstream_url %q must be an absolute http(s) URL", extra["upstream_url"])
 	}
 
 	ctx := templateContext{
@@ -327,11 +358,8 @@ func Generate(s *store.Store, req GenerateRequest) (*GenerateResult, error) {
 		if strings.HasSuffix(filename, ".sh") {
 			perm = 0755
 		}
-		if err := os.WriteFile(destPath, rendered, perm); err != nil {
+		if err := store.WriteFileAtomic(destPath, rendered, perm); err != nil {
 			return nil, fmt.Errorf("write %s: %w", destPath, err)
-		}
-		if err := os.Chmod(destPath, perm); err != nil {
-			return nil, fmt.Errorf("chmod %s: %w", destPath, err)
 		}
 		writtenFiles = append(writtenFiles, destPath)
 	}
@@ -360,19 +388,68 @@ func Generate(s *store.Store, req GenerateRequest) (*GenerateResult, error) {
 	}, nil
 }
 
-func copyArtifactIfPresent(srcPath, dstPath string, mode os.FileMode, fallback string) string {
+// copyArtifactIfPresent copies srcPath into the bundle when it exists locally. An empty
+// or locally absent srcPath returns fallback (the path is then referenced verbatim, e.g.
+// a path on the deployment host). Any other read error, or a write error, is returned
+// instead of being swallowed.
+func copyArtifactIfPresent(srcPath, dstPath string, mode os.FileMode, fallback string) (string, error) {
 	if strings.TrimSpace(srcPath) == "" {
-		return fallback
+		return fallback, nil
 	}
 	data, err := os.ReadFile(srcPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return fallback, nil
+	}
 	if err != nil {
-		return fallback
+		return "", fmt.Errorf("read artifact %s: %w", srcPath, err)
 	}
-	if err := os.WriteFile(dstPath, data, mode); err != nil {
-		return fallback
+	if err := store.WriteFileAtomic(dstPath, data, mode); err != nil {
+		return "", fmt.Errorf("write artifact %s: %w", dstPath, err)
 	}
-	_ = os.Chmod(dstPath, mode)
-	return dstPath
+	return dstPath, nil
+}
+
+var hostRE = regexp.MustCompile(`^[A-Za-z0-9.:_\[\]-]{1,253}$`)
+
+// checkConfigValue rejects characters that let a value escape its slot in any of the
+// generated formats (shell scripts, nginx/Caddy/sshd directives, YAML, JSON, TS, Java):
+// control characters (newline ends a comment or directive), quotes, backslash, shell
+// expansion ($ and backtick) and directive/block delimiters.
+func checkConfigValue(field, v string) error {
+	for _, r := range v {
+		if r < 0x20 || r == 0x7f {
+			return fmt.Errorf("%s must not contain control characters", field)
+		}
+	}
+	if strings.ContainsAny(v, "\"'`$\\;{}") {
+		return fmt.Errorf("%s %q contains a forbidden character (one of \" ' ` $ \\ ; { })", field, v)
+	}
+	return nil
+}
+
+func validateRenderInputs(host string, port int, outDir string, req GenerateRequest) error {
+	if !hostRE.MatchString(host) {
+		return fmt.Errorf("invalid host %q: expected a hostname or IP address", host)
+	}
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("invalid port %d: must be 1-65535", port)
+	}
+	for field, v := range map[string]string{
+		"output_dir":       outDir,
+		"ca_cert_path":     req.CACertPath,
+		"server_cert_path": req.ServerCertPath,
+		"server_key_path":  req.ServerKeyPath,
+		"client_cert_path": req.ClientCertPath,
+		"client_key_path":  req.ClientKeyPath,
+		"ca_name":          req.CAName,
+		"server_cert":      req.ServerCert,
+		"client_cert":      req.ClientCert,
+	} {
+		if err := checkConfigValue(field, v); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func renderTemplate(name, raw string, ctx templateContext) ([]byte, error) {
