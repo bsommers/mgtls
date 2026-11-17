@@ -1004,6 +1004,9 @@ func (srv *Server) dispatchTool(ctx context.Context, name string, rawArgs json.R
 		if err := decodeArgs(rawArgs, &args); err != nil {
 			return nil, err
 		}
+		if !srv.AllowExecHooks && (args.InsecureSkip || args.ESTEnrollRequest.InsecureSkip) {
+			return nil, errors.New("insecure_skip_verify is disabled over MCP; start the server with --allow-exec-hooks to permit it")
+		}
 		switch strings.ToLower(strings.TrimSpace(args.Operation)) {
 		case "cacerts":
 			return pki.ESTFetchCACerts(srv.Store, pki.ESTCACertsRequest{

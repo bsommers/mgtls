@@ -270,6 +270,9 @@ func SignCSR(s *store.Store, req SignCSRRequest) (*SignCSRResult, error) {
 	if name == "" {
 		return nil, errors.New("certificate name is required (CSR has no common name)")
 	}
+	if err := store.ValidName("certificate", name); err != nil {
+		return nil, err
+	}
 	if cn == "" {
 		cn = name
 	}
